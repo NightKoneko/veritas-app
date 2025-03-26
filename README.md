@@ -1,4 +1,4 @@
-# Damage-Analyzer-GUI-RS
+# veritas-app
 
 Made to be used with [Veritas](https://github.com/hessiser/veritas)
 
@@ -6,7 +6,7 @@ This is still a work in progress
 
 ## How to use:
 
-1. `git clone https://github.com/NightKoneko/Damage-Analyzer-GUI-RS.git`
+1. `git clone https://github.com/NightKoneko/veritas-app.git`
 
 2. Inject [Veritas](https://github.com/hessiser/veritas) (You can download a prebuilt Veritas DLL from releases or alternatively build it yourself) into the game. This can be done with a tool like [Genshin Utility](https://github.com/lanylow/genshin-utility) or Cheat Engine.
 
