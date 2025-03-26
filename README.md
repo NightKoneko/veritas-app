@@ -2,6 +2,10 @@
 
 Welcome to **Damage-Analyzer-GUI-RS**! 🎮✨ This is a Rust-powered, blazingly fast 🚀 reimplementation of [Damage-Analyzer-GUI](https://github.com/NightKoneko/Damage-Analyzer-GUI), but with Rust 🦀 and **egui** for sleek, buttery-smooth visuals! 🎨🔥
 
+## Made to be used with [Veritas](https://github.com/hessiser/veritas)
+
+This is still a work in progress.
+
 ## Why Rust? 🤔
 - 🚀 **Blazing fast** performance 💨
 - 💪 **Memory safety** with zero cost abstractions 🛡️
@@ -15,13 +19,6 @@ Welcome to **Damage-Analyzer-GUI-RS**! 🎮✨ This is a Rust-powered, blazingly
 ✅ **Live server connection** 🌐 - Connect & fetch data from a game server in real time! ⚡
 ✅ **Sleek, customizable UI** 🖥️ - Dark mode included by default! 🌑✨
 ✅ **Window pinning** 📌 - Keep it on top for uninterrupted tracking! 👀
-
-## Screenshots 📸
-*(Coming soon!)*
-
-## Made to be used with [Veritas](https://github.com/hessiser/veritas)
-
-This is still a work in progress.
 
 ## How to use:
 
