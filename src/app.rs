@@ -19,6 +19,8 @@ pub struct DamageAnalyzer {
     csv_writer: Option<Writer<File>>,
     current_file: String,
     window_pinned: bool,
+    next_connect_attempt: Option<std::time::Instant>,
+    show_connection_settings: bool,
 }
 
 impl DamageAnalyzer {
@@ -36,35 +38,41 @@ impl DamageAnalyzer {
             csv_writer: None,
             current_file: String::new(),
             window_pinned: false,
+            next_connect_attempt: None,
+            show_connection_settings: false,
         }
     }
 }
 
 impl eframe::App for DamageAnalyzer {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Server:");
-                ui.text_edit_singleline(&mut self.server_addr);
-                ui.label("Port:");
-                ui.text_edit_singleline(&mut self.server_port);
-                
-                if ui.button(if self.connected { "Disconnect" } else { "Connect" }).clicked() {
-                    self.toggle_connection();
-                }
-                
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Connection Settings...").clicked() {
+                        self.show_connection_settings = true;
+                        ui.close_menu();
+                    }
+                });
+            });
+        });
+
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
                 ui.label(if self.connected {
                     egui::RichText::new("Connected").color(egui::Color32::GREEN)
                 } else {
-                    egui::RichText::new("Not Connected").color(egui::Color32::RED)
+                    egui::RichText::new("Connecting...").color(egui::Color32::YELLOW)
                 });
                 
-                if ui.button(if self.window_pinned { "Unpin Window" } else { "Pin Window" }).clicked() {
-                    self.toggle_pin();
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(if self.window_pinned { "Unpin Window" } else { "Pin Window" }).clicked() {
+                        self.toggle_pin();
+                    }
+                });
             });
         });
-        
+
         egui::SidePanel::left("log_panel")
             .resizable(true)
             .default_width(300.0)
@@ -73,7 +81,7 @@ impl eframe::App for DamageAnalyzer {
                 ui.heading("Logs");
                 egui::ScrollArea::vertical()
                     .stick_to_bottom(true)
-                    .max_height(f32::INFINITY)
+                    .max_height(ui.available_height() - 10.0)
                     .show(ui, |ui| {
                         for message in &self.log_messages {
                             ui.label(message);
@@ -99,12 +107,13 @@ impl eframe::App for DamageAnalyzer {
                             if let Some(buffer) = self.data_buffer.try_lock() {
                                 for (i, name) in buffer.column_names.iter().enumerate() {
                                     let color = self.get_character_color(i);
-                                    let damage_points: Vec<[f64; 2]> = buffer.turn_damage.iter()
-                                        .enumerate()
-                                        .filter_map(|(turn_idx, turn_map)| {
-                                            turn_map.get(name).map(|&dmg| 
-                                                [turn_idx as f64 + 1.0, dmg as f64]
-                                            )
+                                    let damage_points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
+                                        .map(|turn_idx| {
+                                            let damage = buffer.turn_damage.get(turn_idx)
+                                                .and_then(|turn| turn.get(name))
+                                                .copied()
+                                                .unwrap_or(0);
+                                            [turn_idx as f64 + 1.0, damage as f64]
                                         })
                                         .collect();
 
@@ -206,7 +215,59 @@ impl eframe::App for DamageAnalyzer {
                 });
             });
         });
-        
+
+        if self.show_connection_settings {
+            egui::Window::new("Connection Settings")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Server:");
+                        ui.text_edit_singleline(&mut self.server_addr);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Port:");
+                        ui.text_edit_singleline(&mut self.server_port);
+                    });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Connect").clicked() {
+                            self.show_connection_settings = false;
+                            self.disconnect();
+                            self.next_connect_attempt = None;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_connection_settings = false;
+                        }
+                    });
+                });
+        }
+
+        if !self.connected {
+            let now = std::time::Instant::now();
+            
+            if self.next_connect_attempt.map_or(true, |t| now >= t) {
+                let addr = format!("{}:{}", self.server_addr, self.server_port);
+                match self.network.connect(&addr) {
+                    Ok(()) => {
+                        let (tx, rx) = mpsc::channel(100);
+                        self.rx = Some(rx);
+                        if let Err(e) = self.network.start_receiving(tx) {
+                            self.log_message(&format!("Failed to start receiver: {}", e));
+                            self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
+                        } else {
+                            self.connected = true;
+                            self.next_connect_attempt = None;
+                            self.log_message(&format!("Connected to {}", addr));
+                        }
+                    }
+                    Err(_) => {
+                        self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
+                    }
+                }
+            }
+        }
+
         let packets = if let Some(rx) = &mut self.rx {
             let mut collected = Vec::new();
             while let Ok(packet) = rx.try_recv() {
@@ -249,32 +310,6 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
 }
 
 impl DamageAnalyzer {
-    fn toggle_connection(&mut self) {
-        if self.connected {
-            self.disconnect();
-        } else {
-            self.connect();
-        }
-    }
-
-    fn connect(&mut self) {
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        match self.network.connect(&addr) {
-            Ok(()) => {
-                let (tx, rx) = mpsc::channel(100);
-                self.rx = Some(rx);
-                if let Err(e) = self.network.start_receiving(tx) {
-                    self.log_message(&format!("Failed to start receiver: {}", e));
-                    return;
-                }
-                self.connected = true;
-                self.log_message(&format!("Connected to {}", addr));
-            }
-            Err(e) => {
-                self.log_message(&format!("Connection failed: {}", e));
-            }
-        }
-    }
 
     fn disconnect(&mut self) {
         self.network.disconnect();
@@ -290,18 +325,6 @@ impl DamageAnalyzer {
         } else {
             "Window unpinned"
         });
-    }
-
-    // moved
-    fn handle_packet(&mut self, packet: Packet) {
-        match packet.r#type.as_str() {
-            "SetBattleLineup" => self.handle_lineup(&packet.data),
-            "OnDamage" => self.handle_damage(&packet.data),
-            "TurnEnd" => self.handle_turn_end(&packet.data),
-            "OnKill" => self.handle_kill(&packet.data),
-            "BattleEnd" => self.handle_battle_end(),
-            _ => self.log_message(&format!("Unknown packet type: {}", packet.r#type)),
-        }
     }
 
     fn handle_lineup(&mut self, data: &serde_json::Value) {
