@@ -1,7 +1,11 @@
 [package]
-name = "damageanalyzer_gui_rs"
+name = "veritas-app"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+[[bin]]
+name = "veritas"
+path = "src/main.rs"
 
 [dependencies]
 eframe = { version = "0.24.1", features = ["persistence", "default"] }

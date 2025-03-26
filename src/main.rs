@@ -15,7 +15,7 @@ async fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "HSR Damage Analyzer",
+        "Veritas App",
         options,
         Box::new(|cc| Box::new(app::DamageAnalyzer::new(cc))),
     )
