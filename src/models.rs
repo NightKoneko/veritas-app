@@ -51,3 +51,12 @@ impl DataBuffer {
         self.inner.try_lock().ok()
     }
 }
+
+impl DataBufferInner {
+    pub fn init_characters(&mut self, names: &[String]) {
+        self.column_names = names.to_vec();
+        self.total_damage = names.iter().map(|name| (name.clone(), 0)).collect();
+        self.current_turn = names.iter().map(|name| (name.clone(), 0)).collect();
+        self.turn_damage.clear();
+    }
+}

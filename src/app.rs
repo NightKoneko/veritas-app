@@ -175,6 +175,7 @@ impl eframe::App for DamageAnalyzer {
                                 Vec::new()
                             };
 
+                            // TODO: add characters names as the labels on the bottom of the bars instead of just "0", "1", "2", "3"
                             Plot::new("damage_bars")
                                 .legend(Legend::default())
                                 .height(300.0)
@@ -350,12 +351,8 @@ impl DamageAnalyzer {
                     }
 
                     if let Some(mut buffer) = self.data_buffer.try_lock() {
-                        let inner = &mut *buffer;
-                        inner.column_names = names.clone();
-                        inner.rows.clear();
-                        inner.total_damage.clear();
-                        inner.turn_damage.clear();
-                        inner.current_turn.clear();
+                        buffer.init_characters(&names);
+                        buffer.rows.clear();
                     }
 
                     self.log_message(&format!("Created CSV: {}", filename));
