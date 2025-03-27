@@ -82,128 +82,129 @@ impl eframe::App for DamageAnalyzer {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.group(|ui| {
-                    ui.heading("Real-time Damage");
-                    Plot::new("damage_plot")
-                        .legend(Legend::default())
-                        .height(250.0)
-                        .include_y(0.0)
-                        .auto_bounds_y()
-                        .allow_drag(false)
-                        .allow_zoom(false)
-                        .x_axis_label("Turn")
-                        .y_axis_label("Damage")
-                        .y_axis_formatter(|y, _, _| Self::format_damage(y))
-                        .show(ui, |plot_ui| {
-                            if let Some(buffer) = self.data_buffer.try_lock() {
-                                for (i, name) in buffer.column_names.iter().enumerate() {
-                                    let color = self.get_character_color(i);
-                                    let damage_points: Vec<[f64; 2]> = buffer.turn_damage.iter()
-                                        .enumerate()
-                                        .filter_map(|(turn_idx, turn_map)| {
-                                            turn_map.get(name).map(|&dmg| 
-                                                [turn_idx as f64 + 1.0, dmg as f64]
-                                            )
-                                        })
-                                        .collect();
-
-                                    if !damage_points.is_empty() {
-                                        plot_ui.line(Line::new(PlotPoints::from(damage_points))
-                                            .name(name)
-                                            .color(color)
-                                            .width(2.0));
-                                    }
-                                }
-                            }
-                        });
-                });
-
-                ui.horizontal(|ui| {
-                    
-                    ui.vertical(|ui| {
-                        ui.group(|ui| {
-                            ui.heading("Damage Distribution");
-                            // TODO: needs fixing, visual bug that displays the colours of each slice extending upwards a bit in rectangles (???)
-                            Plot::new("damage_pie")
-                                .legend(Legend::default().position(egui_plot::Corner::RightTop))
-                                .height(300.0)
-                                .width(ui.available_width() * 0.5)
-                                .data_aspect(1.0)
-                                .allow_drag(false)
-                                .allow_zoom(false)
-                                .show(ui, |plot_ui| {
-                                    if let Some(buffer) = self.data_buffer.try_lock() {
-                                        let total: f64 = buffer.total_damage.values().sum::<i64>() as f64;
-                                        if total > 0.0 {
-                                            let segments = Self::create_pie_segments(&buffer.total_damage, &buffer.column_names);
-                                            for (name, segment, i) in segments {
-                                                let color = self.get_character_color(i);
-                                                let percentage = segment.value / total * 100.0;
-                                                
-                                                plot_ui.line(Line::new(PlotPoints::from_iter(segment.points.iter().copied()))
-                                                    .color(color)
-                                                    .name(&format!("{}: {:.1}% ({} dmg)", 
-                                                        name, 
-                                                        percentage,
-                                                        Self::format_damage(segment.value)))
-                                                    .fill(0.5));
-                                            }
-                                        }
-                                    }
-                                });
-                        });
-                    });
-
-                    ui.vertical(|ui| {
-                        ui.group(|ui| {
-                            ui.heading("Total Damage by Character");
-
-                            //unused for now
-                            let column_names = if let Some(buffer) = self.data_buffer.try_lock() {
-                                buffer.column_names.clone()
-                            } else {
-                                Vec::new()
-                            };
-
-                            Plot::new("damage_bars")
-                                .legend(Legend::default())
-                                .height(300.0)
-                                .width(ui.available_width())
-                                .allow_drag(false)
-                                .allow_zoom(false)
-                                .y_axis_formatter(|y, _, _| Self::format_damage(y))
-                                .show(ui, |plot_ui| {
-                                    if let Some(buffer) = self.data_buffer.try_lock() {
-                                        let bars_data = Self::create_bar_data(&buffer);
-                                        
-                                        
-                                        let bars: Vec<Bar> = bars_data
-                                            .iter()
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.group(|ui| {
+                        ui.heading("Real-time Damage");
+                        Plot::new("damage_plot")
+                            .legend(Legend::default())
+                            .height(250.0)
+                            .include_y(0.0)
+                            .allow_drag(false)
+                            .allow_zoom(false)
+                            .x_axis_label("Turn")
+                            .y_axis_label("Damage")
+                            .y_axis_formatter(|y, _| Self::format_damage(y.value))
+                            .show(ui, |plot_ui| {
+                                if let Some(buffer) = self.data_buffer.try_lock() {
+                                    for (i, name) in buffer.column_names.iter().enumerate() {
+                                        let color = self.get_character_color(i);
+                                        let damage_points: Vec<[f64; 2]> = buffer.turn_damage.iter()
                                             .enumerate()
-                                            .map(|(pos, (name, value, color_idx))| {
-                                                Bar::new(pos as f64, *value)
-                                                    .name(name)
-                                                    .fill(self.get_character_color(*color_idx))
-                                                    .width(0.7)
+                                            .filter_map(|(turn_idx, turn_map)| {
+                                                turn_map.get(name).map(|&dmg| 
+                                                    [turn_idx as f64 + 1.0, dmg as f64]
+                                                )
                                             })
                                             .collect();
-
-                                        let names: Vec<String> = bars_data.iter()
-                                            .map(|(name, _, _)| name.clone())
-                                            .collect();
-
-                                        let chart = BarChart::new(bars)
-                                            .element_formatter(Box::new(move |bar: &Bar, _: &BarChart| {
-                                                names[bar.argument as usize].clone()
-                                            }));
-
-                                        plot_ui.bar_chart(chart);
+    
+                                        if !damage_points.is_empty() {
+                                            plot_ui.line(Line::new(PlotPoints::from(damage_points))
+                                                .name(name)
+                                                .color(color)
+                                                .width(2.0));
+                                        }
                                     }
-                                });
+                                }
+                            });
+                    });
+    
+                    ui.horizontal(|ui| {
+                        
+                        ui.vertical(|ui| {
+                            ui.group(|ui| {
+                                ui.heading("Damage Distribution");
+                                // TODO: needs fixing, visual bug that displays the colours of each slice extending upwards a bit in rectangles (???)
+                                Plot::new("damage_pie")
+                                    .legend(Legend::default().position(egui_plot::Corner::RightTop))
+                                    .height(300.0)
+                                    .width(ui.available_width() * 0.5)
+                                    .data_aspect(1.0)
+                                    .allow_drag(false)
+                                    .allow_zoom(false)
+                                    .show(ui, |plot_ui| {
+                                        if let Some(buffer) = self.data_buffer.try_lock() {
+                                            let total: f64 = buffer.total_damage.values().sum::<i64>() as f64;
+                                            if total > 0.0 {
+                                                let segments = Self::create_pie_segments(&buffer.total_damage, &buffer.column_names);
+                                                for (name, segment, i) in segments {
+                                                    let color = self.get_character_color(i);
+                                                    let percentage = segment.value / total * 100.0;
+                                                    
+                                                    plot_ui.line(Line::new(PlotPoints::from_iter(segment.points.iter().copied()))
+                                                        .color(color)
+                                                        .name(&format!("{}: {:.1}% ({} dmg)", 
+                                                            name, 
+                                                            percentage,
+                                                            Self::format_damage(segment.value)))
+                                                        .fill(0.5));
+                                                }
+                                            }
+                                        }
+                                    });
+                            });
+                        });
+    
+                        ui.vertical(|ui| {
+                            ui.group(|ui| {
+                                ui.heading("Total Damage by Character");
+    
+                                //unused for now
+                                let column_names = if let Some(buffer) = self.data_buffer.try_lock() {
+                                    buffer.column_names.clone()
+                                } else {
+                                    Vec::new()
+                                };
+    
+                                Plot::new("damage_bars")
+                                    .legend(Legend::default())
+                                    .height(300.0)
+                                    .width(ui.available_width())
+                                    .allow_drag(false)
+                                    .allow_zoom(false)
+                                    .y_axis_formatter(|y, _| Self::format_damage(y.value))
+                                    .show(ui, |plot_ui| {
+                                        if let Some(buffer) = self.data_buffer.try_lock() {
+                                            let bars_data = Self::create_bar_data(&buffer);
+                                            
+                                            
+                                            let bars: Vec<Bar> = bars_data
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(pos, (name, value, color_idx))| {
+                                                    Bar::new(pos as f64, *value)
+                                                        .name(name)
+                                                        .fill(self.get_character_color(*color_idx))
+                                                        .width(0.7)
+                                                })
+                                                .collect();
+    
+                                            let names: Vec<String> = bars_data.iter()
+                                                .map(|(name, _, _)| name.clone())
+                                                .collect();
+    
+                                            let chart = BarChart::new(bars)
+                                                .element_formatter(Box::new(move |bar: &Bar, _: &BarChart| {
+                                                    names[bar.argument as usize].clone()
+                                                }));
+    
+                                            plot_ui.bar_chart(chart);
+                                        }
+                                    });
+                            });
                         });
                     });
-                });
+                });   
             });
         });
         
