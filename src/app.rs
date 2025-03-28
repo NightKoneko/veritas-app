@@ -7,6 +7,31 @@ use tokio::sync::mpsc;
 use csv::Writer;
 use serde::Deserialize;
 use crate::{models::*, network::NetworkClient};
+use egui::ComboBox;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Theme {
+    Dark,
+    Light
+}
+
+impl Theme {
+    fn name(&self) -> &'static str {
+        match self {
+            Theme::Dark => "Dark",
+            Theme::Light => "Light",
+        }
+    }
+
+    fn visuals(&self) -> egui::Visuals {
+        match self {
+            Theme::Dark => egui::Visuals::dark(),
+            Theme::Light => egui::Visuals::light(),
+        }
+    }
+
+    const ALL: &'static [Theme] = &[Theme::Dark, Theme::Light];
+}
 
 pub struct DamageAnalyzer {
     server_addr: String,
@@ -21,11 +46,13 @@ pub struct DamageAnalyzer {
     window_pinned: bool,
     next_connect_attempt: Option<std::time::Instant>,
     show_connection_settings: bool,
+    show_preferences: bool,
+    theme: Theme,
 }
 
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        cc.egui_ctx.set_visuals(Theme::Light.visuals());
         
         Self {
             server_addr: "127.0.0.1".to_string(),
@@ -40,17 +67,28 @@ impl DamageAnalyzer {
             window_pinned: false,
             next_connect_attempt: None,
             show_connection_settings: false,
+            show_preferences: false,
+            theme: Theme::Light,
         }
+    }
+
+    fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
+        self.theme = theme;
+        ctx.set_visuals(theme.visuals());
     }
 }
 
 impl eframe::App for DamageAnalyzer {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Connection Settings...").clicked() {
                         self.show_connection_settings = true;
+                        ui.close_menu();
+                    }
+                    if ui.button("Preferences...").clicked() {
+                        self.show_preferences = true;
                         ui.close_menu();
                     }
                 });
@@ -79,13 +117,18 @@ impl eframe::App for DamageAnalyzer {
             .width_range(200.0..=400.0)
             .show(ctx, |ui| {
                 ui.heading("Logs");
+                let text = self.log_messages.join("\n");
                 egui::ScrollArea::vertical()
                     .stick_to_bottom(true)
                     .max_height(ui.available_height() - 10.0)
                     .show(ui, |ui| {
-                        for message in &self.log_messages {
-                            ui.label(message);
-                        }
+                        let _response = ui.add(
+                            egui::TextEdit::multiline(&mut text.as_str())
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(1)
+                                .frame(false)
+                                .margin(egui::vec2(2.0, 2.0))
+                        );
                     });
             });
 
@@ -117,7 +160,7 @@ impl eframe::App for DamageAnalyzer {
                     Plot::new("dpav_plot")
                         .height(200.0)
                         .include_y(0.0)
-                        .auto_bounds_y()
+                        .auto_bounds([false, true])
                         .allow_drag(false)
                         .allow_zoom(false)
                         .show(ui, |plot_ui| {
@@ -139,7 +182,7 @@ impl eframe::App for DamageAnalyzer {
                     Plot::new("dmg_av_plot")
                         .height(200.0)
                         .include_y(0.0)
-                        .auto_bounds_y()
+                        .auto_bounds([false, true])
                         .allow_drag(false)
                         .allow_zoom(false)
                         .x_axis_label("Action Value")
@@ -183,7 +226,7 @@ impl eframe::App for DamageAnalyzer {
                             .legend(Legend::default())
                             .height(250.0)
                             .include_y(0.0)
-                            .auto_bounds_y()
+                            .auto_bounds([false, true])
                             .allow_drag(false)
                             .allow_zoom(false)
                             .x_axis_label("Turn")
@@ -316,6 +359,33 @@ impl eframe::App for DamageAnalyzer {
                             self.show_connection_settings = false;
                         }
                     });
+                });
+        }
+
+        if self.show_preferences {
+            egui::Window::new("Preferences")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Theme:");
+                        let mut selected_theme = self.theme;
+                        ComboBox::from_id_salt("theme_selector")
+                            .selected_text(self.theme.name())
+                            .show_ui(ui, |ui| {
+                                for &theme in Theme::ALL {
+                                    let text = theme.name();
+                                    if ui.selectable_value(&mut selected_theme, theme, text).clicked() {
+                                        self.set_theme(theme, ctx);
+                                    }
+                                }
+                            });
+                    });
+                    
+                    ui.separator();
+                    if ui.button("Close").clicked() {
+                        self.show_preferences = false;
+                    }
                 });
         }
 
