@@ -1,6 +1,8 @@
 mod app;
 mod models;
 mod network;
+pub mod panels;
+pub mod widgets;
 
 use eframe::egui;
 

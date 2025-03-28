@@ -1,59 +1,58 @@
 use std::sync::Arc;
 use std::fs::{self, File};
 use std::collections::HashMap;
-use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoints, Bar, BarChart, Legend};
+use eframe::egui::{self};
+use serde::Deserialize;
 use tokio::sync::mpsc;
 use csv::Writer;
-use serde::Deserialize;
 use crate::{models::*, network::NetworkClient};
-use egui::ComboBox;
 use std::thread;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Theme {
+pub enum Theme {
     Dark,
     Light
 }
 
 impl Theme {
-    fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             Theme::Dark => "Dark",
             Theme::Light => "Light",
         }
     }
 
-    fn visuals(&self) -> egui::Visuals {
+    pub fn visuals(&self) -> egui::Visuals {
         match self {
             Theme::Dark => egui::Visuals::dark(),
             Theme::Light => egui::Visuals::light(),
         }
     }
 
-    const ALL: &'static [Theme] = &[Theme::Dark, Theme::Light];
+    pub const ALL: &'static [Theme] = &[Theme::Dark, Theme::Light];
 }
 
 pub struct DamageAnalyzer {
-    server_addr: String,
-    server_port: String,
-    network: NetworkClient,
-    connected: bool,
-    data_buffer: Arc<DataBuffer>,
-    log_messages: Vec<String>,
-    rx: Option<mpsc::Receiver<Packet>>,
-    csv_writer: Option<Writer<File>>,
-    current_file: String,
-    window_pinned: bool,
-    show_connection_settings: bool,
-    show_preferences: bool,
-    theme: Theme,
-    connection_status_rx: Option<mpsc::Receiver<ConnectionStatus>>,
+    pub server_addr: String,
+    pub server_port: String,
+    pub network: NetworkClient,
+    pub connected: bool,
+    pub data_buffer: Arc<DataBuffer>,
+    pub log_messages: Vec<String>,
+    pub rx: Option<mpsc::Receiver<Packet>>,
+    pub csv_writer: Option<Writer<File>>,
+    pub current_file: String,
+    pub window_pinned: bool,
+    pub show_connection_settings: bool,
+    pub show_preferences: bool,
+    pub theme: Theme,
+    pub connection_status_rx: Option<mpsc::Receiver<ConnectionStatus>>,
+    pub is_sidebar_expanded: bool
 }
 
 #[derive(Debug)]
-enum ConnectionStatus {
+pub enum ConnectionStatus {
     Connected(mpsc::Receiver<Packet>),
     Failed(String),
 }
@@ -61,7 +60,8 @@ enum ConnectionStatus {
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(Theme::Light.visuals());
-        
+        egui_material_icons::initialize(&cc.egui_ctx);
+
         let mut instance = Self {
             server_addr: "127.0.0.1".to_string(),
             server_port: "1305".to_string(),
@@ -77,6 +77,7 @@ impl DamageAnalyzer {
             show_preferences: false,
             theme: Theme::Light,
             connection_status_rx: None,
+            is_sidebar_expanded: false
         };
 
         instance.start_connection_thread();
@@ -84,7 +85,7 @@ impl DamageAnalyzer {
         instance
     }
 
-    fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
+    pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
         self.theme = theme;
         ctx.set_visuals(theme.visuals());
     }
@@ -116,7 +117,7 @@ impl DamageAnalyzer {
                         }
                     }
                     Err(_) => {
-                        thread::sleep(Duration::from_secs(5));
+                        thread::sleep(Duration::from_millis(500));
                     }
                 }
             }
@@ -128,314 +129,13 @@ impl DamageAnalyzer {
 
 impl eframe::App for DamageAnalyzer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Connection Settings...").clicked() {
-                        self.show_connection_settings = true;
-                        ui.close_menu();
-                    }
-                    if ui.button("Preferences...").clicked() {
-                        self.show_preferences = true;
-                        ui.close_menu();
-                    }
-                });
-            });
-        });
+        self.show_menubar_panel(ctx, _frame);
+        self.show_statusbar_panel(ctx, _frame);
 
-        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal_centered(|ui| {
-                ui.label(if self.connected {
-                    egui::RichText::new("Connected").color(egui::Color32::GREEN)
-                } else {
-                    // TODO: Make this not look terrible on light mode
-                    egui::RichText::new("Connecting...").color(egui::Color32::YELLOW)
-                });
-                
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(if self.window_pinned { "Unpin Window" } else { "Pin Window" }).clicked() {
-                        self.toggle_pin();
-                    }
-                });
-            });
-        });
+        self.show_sidebar_panel(ctx, _frame);
+        self.show_av_panel(ctx, _frame);
 
-        egui::SidePanel::left("log_panel")
-            .resizable(true)
-            .default_width(300.0)
-            .width_range(200.0..=400.0)
-            .show(ctx, |ui| {
-                ui.heading("Logs");
-                let text = self.log_messages.join("\n");
-                egui::ScrollArea::vertical()
-                    .stick_to_bottom(true)
-                    .max_height(ui.available_height() - 10.0)
-                    .show(ui, |ui| {
-                        let _response = ui.add(
-                            egui::TextEdit::multiline(&mut text.as_str())
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(1)
-                                .frame(false)
-                                .margin(egui::vec2(2.0, 2.0))
-                        );
-                    });
-            });
-
-        egui::SidePanel::right("av_panel")
-            .resizable(true)
-            .default_width(250.0)
-            .width_range(200.0..=400.0)
-            .show(ctx, |ui| {
-                ui.heading("Action Value Metrics");
-                
-                if let Some(buffer) = self.data_buffer.try_lock() {
-                    ui.separator();
-                    ui.label("Current Turn");
-                    ui.horizontal(|ui| {
-                        ui.label("AV:");
-                        ui.label(format!("{:.2}", buffer.current_av));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Total Damage:");
-                        ui.label(Self::format_damage(buffer.total_damage.values().sum::<f32>() as f64));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Total DpAV:");
-                        ui.label(format!("{:.2}", buffer.total_dpav));
-                    });
-
-                    ui.separator();
-                    ui.label("DpAV over Time");
-                    Plot::new("dpav_plot")
-                        .height(200.0)
-                        .include_y(0.0)
-                        .auto_bounds([false, true])
-                        .allow_drag(false)
-                        .allow_zoom(false)
-                        .show(ui, |plot_ui| {
-                            if !buffer.dpav_history.is_empty() {
-                                let points: Vec<[f64; 2]> = buffer.dpav_history.iter()
-                                    .enumerate()
-                                    .map(|(i, &dpav)| [i as f64 + 1.0, dpav as f64])
-                                    .collect();
-
-                                plot_ui.line(Line::new(PlotPoints::from(points))
-                                    .name("DpAV")
-                                    .width(2.0));
-                            }
-                        });
-
-                    ui.separator();
-                    // this is kind of scuffed I think
-                    ui.label("Damage vs Action Value");
-                    Plot::new("dmg_av_plot")
-                        .height(200.0)
-                        .include_y(0.0)
-                        .auto_bounds([false, true])
-                        .allow_drag(false)
-                        .allow_zoom(false)
-                        .x_axis_label("Action Value")
-                        .y_axis_label("Damage")
-                        .y_axis_formatter(|y, _| Self::format_damage(y.value))
-                        .show(ui, |plot_ui| {
-                            if !buffer.turn_damage.is_empty() {
-                                for (i, name) in buffer.column_names.iter().enumerate() {
-                                    let color = self.get_character_color(i);
-                                    let points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
-                                        .map(|turn_idx| {
-                                            let damage = buffer.turn_damage.get(turn_idx)
-                                                .and_then(|turn| turn.get(name))
-                                                .copied()
-                                                .unwrap_or(0.0);
-                                            let av = buffer.av_history.get(turn_idx)
-                                                .copied()
-                                                .unwrap_or(0.0);
-                                            [av as f64, damage as f64]
-                                        })
-                                        .collect();
-
-                                    if !points.is_empty() {
-                                        plot_ui.line(Line::new(PlotPoints::from(points))
-                                            .name(name)
-                                            .color(color)
-                                            .width(2.0));
-                                    }
-                                }
-                            }
-                        });
-                }
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.group(|ui| {
-                        ui.heading("Real-time Damage");
-                        Plot::new("damage_plot")
-                            .legend(Legend::default())
-                            .height(250.0)
-                            .include_y(0.0)
-                            .auto_bounds([false, true])
-                            .allow_drag(false)
-                            .allow_zoom(false)
-                            .x_axis_label("Turn")
-                            .y_axis_label("Damage")
-                            .y_axis_formatter(|y, _| Self::format_damage(y.value))
-                            .show(ui, |plot_ui| {
-                                if let Some(buffer) = self.data_buffer.try_lock() {
-                                    for (i, name) in buffer.column_names.iter().enumerate() {
-                                        let color = self.get_character_color(i);
-                                        let damage_points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
-                                            .map(|turn_idx| {
-                                                let damage = buffer.turn_damage.get(turn_idx)
-                                                    .and_then(|turn| turn.get(name))
-                                                    .copied()
-                                                    .unwrap_or(0.0);
-                                                [turn_idx as f64 + 1.0, damage as f64]
-                                            })
-                                            .collect();
-        
-                                        if !damage_points.is_empty() {
-                                            plot_ui.line(Line::new(PlotPoints::from(damage_points))
-                                                .name(name)
-                                                .color(color)
-                                                .width(2.0));
-                                        }
-                                    }
-                                }
-                            });
-                    });
-        
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.group(|ui| {
-                                ui.heading("Damage Distribution");
-                                Plot::new("damage_pie")
-                                    .legend(Legend::default().position(egui_plot::Corner::RightTop))
-                                    .height(300.0)
-                                    .width(ui.available_width() * 0.5)
-                                    .data_aspect(1.0)
-                                    .allow_drag(false)
-                                    .allow_zoom(false)
-                                    .show(ui, |plot_ui| {
-                                        if let Some(buffer) = self.data_buffer.try_lock() {
-                                            let total: f64 = buffer.total_damage.values().sum::<f32>() as f64;
-                                            if total > 0.0 {
-                                                let segments = Self::create_pie_segments(&buffer.total_damage, &buffer.column_names);
-                                                for (name, segment, i) in segments {
-                                                    let color = self.get_character_color(i);
-                                                    let percentage = segment.value / total * 100.0;
-                                                    
-                                                    plot_ui.line(Line::new(PlotPoints::from_iter(segment.points.iter().copied()))
-                                                        .color(color)
-                                                        .name(&format!("{}: {:.1}% ({} dmg)", 
-                                                            name, 
-                                                            percentage,
-                                                            Self::format_damage(segment.value)))
-                                                        .fill(0.5));
-                                                }
-                                            }
-                                        }
-                                    });
-                            });
-                        });
-        
-                        ui.vertical(|ui| {
-                            ui.group(|ui| {
-                                ui.heading("Total Damage by Character");
-                                Plot::new("damage_bars")
-                                    .legend(Legend::default())
-                                    .height(300.0)
-                                    .width(ui.available_width())
-                                    .allow_drag(false)
-                                    .allow_zoom(false)
-                                    .y_axis_formatter(|y, _| Self::format_damage(y.value))
-                                    .show(ui, |plot_ui| {
-                                        if let Some(buffer) = self.data_buffer.try_lock() {
-                                            let bars_data = Self::create_bar_data(&buffer);
-                                            
-                                            let bars: Vec<Bar> = bars_data
-                                                .iter()
-                                                .enumerate()
-                                                .map(|(pos, (name, value, color_idx))| {
-                                                    Bar::new(pos as f64, *value)
-                                                        .name(name)
-                                                        .fill(self.get_character_color(*color_idx))
-                                                        .width(0.7)
-                                                })
-                                                .collect();
-        
-                                            let names: Vec<String> = bars_data.iter()
-                                                .map(|(name, _, _)| name.clone())
-                                                .collect();
-        
-                                            let chart = BarChart::new(bars)
-                                                .element_formatter(Box::new(move |bar: &Bar, _: &BarChart| {
-                                                    names[bar.argument as usize].clone()
-                                                }));
-        
-                                            plot_ui.bar_chart(chart);
-                                        }
-                                    });
-                            });
-                        });
-                    });
-                });
-            });
-        });
-
-        if self.show_connection_settings {
-            egui::Window::new("Connection Settings")
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Server:");
-                        ui.text_edit_singleline(&mut self.server_addr);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Port:");
-                        ui.text_edit_singleline(&mut self.server_port);
-                    });
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if ui.button("Connect").clicked() {
-                            self.show_connection_settings = false;
-                            self.disconnect();
-                        }
-                        if ui.button("Cancel").clicked() {
-                            self.show_connection_settings = false;
-                        }
-                    });
-                });
-        }
-
-        if self.show_preferences {
-            egui::Window::new("Preferences")
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Theme:");
-                        let mut selected_theme = self.theme;
-                        ComboBox::from_id_salt("theme_selector")
-                            .selected_text(self.theme.name())
-                            .show_ui(ui, |ui| {
-                                for &theme in Theme::ALL {
-                                    let text = theme.name();
-                                    if ui.selectable_value(&mut selected_theme, theme, text).clicked() {
-                                        self.set_theme(theme, ctx);
-                                    }
-                                }
-                            });
-                    });
-                    
-                    ui.separator();
-                    if ui.button("Close").clicked() {
-                        self.show_preferences = false;
-                    }
-                });
-        }
+        self.show_central_panel(ctx, _frame);
 
         if !self.connected {
             if let Some(status) = self.connection_status_rx.as_mut().and_then(|rx| rx.try_recv().ok()) {
@@ -484,9 +184,10 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
     let radius = 0.8; 
     let mut points = vec![center];
     
-    let steps = 50; 
+    let steps = 50;
+    let p = (end_angle - start_angle)/(steps as f64);
     for i in 0..=steps {
-        let angle = start_angle + (end_angle - start_angle) * (i as f64 / steps as f64);
+        let angle = start_angle + p*i as f64;
         let (sin, cos) = angle.sin_cos();
         points.push([cos * radius, sin * radius]);
     }
@@ -497,7 +198,7 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
 
 impl DamageAnalyzer {
 
-    fn disconnect(&mut self) {
+    pub fn disconnect(&mut self) {
         self.network.disconnect();
         self.connected = false;
         self.rx = None;
@@ -505,7 +206,7 @@ impl DamageAnalyzer {
         self.log_message("Disconnected");
     }
 
-    fn toggle_pin(&mut self) {
+    pub fn toggle_pin(&mut self) {
         self.window_pinned = !self.window_pinned;
         self.log_message(if self.window_pinned {
             "Window pinned on top"
@@ -631,7 +332,7 @@ impl DamageAnalyzer {
         self.disconnect();
     }
 
-    fn format_damage(value: f64) -> String {
+    pub fn format_damage(value: f64) -> String {
         if value >= 1_000_000.0 {
             let m = value / 1_000_000.0;
             if m.fract() < 0.1 {
@@ -646,7 +347,7 @@ impl DamageAnalyzer {
         }
     }
 
-    fn get_character_color(&self, index: usize) -> egui::Color32 {
+    pub fn get_character_color(&self, index: usize) -> egui::Color32 {
         const COLORS: &[egui::Color32] = &[
             egui::Color32::from_rgb(255, 99, 132),   
             egui::Color32::from_rgb(54, 162, 235),   
@@ -671,7 +372,7 @@ impl DamageAnalyzer {
         }
     }
 
-    fn create_pie_segments(damage_map: &HashMap<String, f32>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
+    pub fn create_pie_segments(damage_map: &HashMap<String, f32>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
         let total: f64 = damage_map.values().sum::<f32>() as f64;
         let mut segments = Vec::new();
         let mut start_angle = -std::f64::consts::FRAC_PI_2; 
@@ -694,7 +395,7 @@ impl DamageAnalyzer {
         segments
     }
 
-    fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {
+    pub fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {
         
         let mut data: Vec<_> = buffer.column_names.iter()
             .enumerate()
@@ -733,9 +434,9 @@ impl DamageAnalyzer {
     }
 }
 
-struct PieSegment {
-    points: Vec<[f64; 2]>,
-    value: f64,
+pub struct PieSegment {
+    pub points: Vec<[f64; 2]>,
+    pub value: f64,
 }
 
 #[derive(Debug, Deserialize)]
