@@ -144,7 +144,7 @@ impl eframe::App for DamageAnalyzer {
                         .allow_zoom(false)
                         .x_axis_label("Action Value")
                         .y_axis_label("Damage")
-                        .y_axis_formatter(|y, _, _| Self::format_damage(y))
+                        .y_axis_formatter(|y, _| Self::format_damage(y.value))
                         .show(ui, |plot_ui| {
                             if !buffer.turn_damage.is_empty() {
                                 for (i, name) in buffer.column_names.iter().enumerate() {
@@ -188,7 +188,7 @@ impl eframe::App for DamageAnalyzer {
                             .allow_zoom(false)
                             .x_axis_label("Turn")
                             .y_axis_label("Damage")
-                            .y_axis_formatter(|y, _, _| Self::format_damage(y))
+                            .y_axis_formatter(|y, _| Self::format_damage(y.value))
                             .show(ui, |plot_ui| {
                                 if let Some(buffer) = self.data_buffer.try_lock() {
                                     for (i, name) in buffer.column_names.iter().enumerate() {
@@ -257,7 +257,7 @@ impl eframe::App for DamageAnalyzer {
                                     .width(ui.available_width())
                                     .allow_drag(false)
                                     .allow_zoom(false)
-                                    .y_axis_formatter(|y, _, _| Self::format_damage(y))
+                                    .y_axis_formatter(|y, _| Self::format_damage(y.value))
                                     .show(ui, |plot_ui| {
                                         if let Some(buffer) = self.data_buffer.try_lock() {
                                             let bars_data = Self::create_bar_data(&buffer);
