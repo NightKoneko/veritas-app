@@ -19,6 +19,8 @@ pub struct DamageAnalyzer {
     csv_writer: Option<Writer<File>>,
     current_file: String,
     window_pinned: bool,
+    next_connect_attempt: Option<std::time::Instant>,
+    show_connection_settings: bool,
 }
 
 impl DamageAnalyzer {
@@ -36,35 +38,41 @@ impl DamageAnalyzer {
             csv_writer: None,
             current_file: String::new(),
             window_pinned: false,
+            next_connect_attempt: None,
+            show_connection_settings: false,
         }
     }
 }
 
 impl eframe::App for DamageAnalyzer {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Server:");
-                ui.text_edit_singleline(&mut self.server_addr);
-                ui.label("Port:");
-                ui.text_edit_singleline(&mut self.server_port);
-                
-                if ui.button(if self.connected { "Disconnect" } else { "Connect" }).clicked() {
-                    self.toggle_connection();
-                }
-                
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Connection Settings...").clicked() {
+                        self.show_connection_settings = true;
+                        ui.close_menu();
+                    }
+                });
+            });
+        });
+
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
                 ui.label(if self.connected {
                     egui::RichText::new("Connected").color(egui::Color32::GREEN)
                 } else {
-                    egui::RichText::new("Not Connected").color(egui::Color32::RED)
+                    egui::RichText::new("Connecting...").color(egui::Color32::YELLOW)
                 });
                 
-                if ui.button(if self.window_pinned { "Unpin Window" } else { "Pin Window" }).clicked() {
-                    self.toggle_pin();
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button(if self.window_pinned { "Unpin Window" } else { "Pin Window" }).clicked() {
+                        self.toggle_pin();
+                    }
+                });
             });
         });
-        
+
         egui::SidePanel::left("log_panel")
             .resizable(true)
             .default_width(300.0)
@@ -73,12 +81,97 @@ impl eframe::App for DamageAnalyzer {
                 ui.heading("Logs");
                 egui::ScrollArea::vertical()
                     .stick_to_bottom(true)
-                    .max_height(f32::INFINITY)
+                    .max_height(ui.available_height() - 10.0)
                     .show(ui, |ui| {
                         for message in &self.log_messages {
                             ui.label(message);
                         }
                     });
+            });
+
+        egui::SidePanel::right("av_panel")
+            .resizable(true)
+            .default_width(250.0)
+            .width_range(200.0..=400.0)
+            .show(ctx, |ui| {
+                ui.heading("Action Value Metrics");
+                
+                if let Some(buffer) = self.data_buffer.try_lock() {
+                    ui.separator();
+                    ui.label("Current Turn");
+                    ui.horizontal(|ui| {
+                        ui.label("AV:");
+                        ui.label(format!("{:.2}", buffer.current_av));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Total Damage:");
+                        ui.label(Self::format_damage(buffer.total_damage.values().sum::<f32>() as f64));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Total DpAV:");
+                        ui.label(format!("{:.2}", buffer.total_dpav));
+                    });
+
+                    ui.separator();
+                    ui.label("DpAV over Time");
+                    Plot::new("dpav_plot")
+                        .height(200.0)
+                        .include_y(0.0)
+                        .auto_bounds_y()
+                        .allow_drag(false)
+                        .allow_zoom(false)
+                        .show(ui, |plot_ui| {
+                            if !buffer.dpav_history.is_empty() {
+                                let points: Vec<[f64; 2]> = buffer.dpav_history.iter()
+                                    .enumerate()
+                                    .map(|(i, &dpav)| [i as f64 + 1.0, dpav as f64])
+                                    .collect();
+
+                                plot_ui.line(Line::new(PlotPoints::from(points))
+                                    .name("DpAV")
+                                    .width(2.0));
+                            }
+                        });
+
+                    ui.separator();
+                    // this is kind of scuffed I think
+                    ui.label("Damage vs Action Value");
+                    Plot::new("dmg_av_plot")
+                        .height(200.0)
+                        .include_y(0.0)
+                        .auto_bounds_y()
+                        .allow_drag(false)
+                        .allow_zoom(false)
+                        .x_axis_label("Action Value")
+                        .y_axis_label("Damage")
+                        .y_axis_formatter(|y, _, _| Self::format_damage(y))
+                        .show(ui, |plot_ui| {
+                            if !buffer.turn_damage.is_empty() {
+                                for (i, name) in buffer.column_names.iter().enumerate() {
+                                    let color = self.get_character_color(i);
+                                    let points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
+                                        .map(|turn_idx| {
+                                            let damage = buffer.turn_damage.get(turn_idx)
+                                                .and_then(|turn| turn.get(name))
+                                                .copied()
+                                                .unwrap_or(0.0);
+                                            let av = buffer.av_history.get(turn_idx)
+                                                .copied()
+                                                .unwrap_or(0.0);
+                                            [av as f64, damage as f64]
+                                        })
+                                        .collect();
+
+                                    if !points.is_empty() {
+                                        plot_ui.line(Line::new(PlotPoints::from(points))
+                                            .name(name)
+                                            .color(color)
+                                            .width(2.0));
+                                    }
+                                }
+                            }
+                        });
+                }
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -90,24 +183,26 @@ impl eframe::App for DamageAnalyzer {
                             .legend(Legend::default())
                             .height(250.0)
                             .include_y(0.0)
+                            .auto_bounds_y()
                             .allow_drag(false)
                             .allow_zoom(false)
                             .x_axis_label("Turn")
                             .y_axis_label("Damage")
-                            .y_axis_formatter(|y, _| Self::format_damage(y.value))
+                            .y_axis_formatter(|y, _, _| Self::format_damage(y))
                             .show(ui, |plot_ui| {
                                 if let Some(buffer) = self.data_buffer.try_lock() {
                                     for (i, name) in buffer.column_names.iter().enumerate() {
                                         let color = self.get_character_color(i);
-                                        let damage_points: Vec<[f64; 2]> = buffer.turn_damage.iter()
-                                            .enumerate()
-                                            .filter_map(|(turn_idx, turn_map)| {
-                                                turn_map.get(name).map(|&dmg| 
-                                                    [turn_idx as f64 + 1.0, dmg as f64]
-                                                )
+                                        let damage_points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
+                                            .map(|turn_idx| {
+                                                let damage = buffer.turn_damage.get(turn_idx)
+                                                    .and_then(|turn| turn.get(name))
+                                                    .copied()
+                                                    .unwrap_or(0.0);
+                                                [turn_idx as f64 + 1.0, damage as f64]
                                             })
                                             .collect();
-    
+        
                                         if !damage_points.is_empty() {
                                             plot_ui.line(Line::new(PlotPoints::from(damage_points))
                                                 .name(name)
@@ -118,13 +213,11 @@ impl eframe::App for DamageAnalyzer {
                                 }
                             });
                     });
-    
+        
                     ui.horizontal(|ui| {
-                        
                         ui.vertical(|ui| {
                             ui.group(|ui| {
                                 ui.heading("Damage Distribution");
-                                // TODO: needs fixing, visual bug that displays the colours of each slice extending upwards a bit in rectangles (???)
                                 Plot::new("damage_pie")
                                     .legend(Legend::default().position(egui_plot::Corner::RightTop))
                                     .height(300.0)
@@ -134,7 +227,7 @@ impl eframe::App for DamageAnalyzer {
                                     .allow_zoom(false)
                                     .show(ui, |plot_ui| {
                                         if let Some(buffer) = self.data_buffer.try_lock() {
-                                            let total: f64 = buffer.total_damage.values().sum::<i64>() as f64;
+                                            let total: f64 = buffer.total_damage.values().sum::<f32>() as f64;
                                             if total > 0.0 {
                                                 let segments = Self::create_pie_segments(&buffer.total_damage, &buffer.column_names);
                                                 for (name, segment, i) in segments {
@@ -154,29 +247,20 @@ impl eframe::App for DamageAnalyzer {
                                     });
                             });
                         });
-    
+        
                         ui.vertical(|ui| {
                             ui.group(|ui| {
                                 ui.heading("Total Damage by Character");
-    
-                                //unused for now
-                                let column_names = if let Some(buffer) = self.data_buffer.try_lock() {
-                                    buffer.column_names.clone()
-                                } else {
-                                    Vec::new()
-                                };
-    
                                 Plot::new("damage_bars")
                                     .legend(Legend::default())
                                     .height(300.0)
                                     .width(ui.available_width())
                                     .allow_drag(false)
                                     .allow_zoom(false)
-                                    .y_axis_formatter(|y, _| Self::format_damage(y.value))
+                                    .y_axis_formatter(|y, _, _| Self::format_damage(y))
                                     .show(ui, |plot_ui| {
                                         if let Some(buffer) = self.data_buffer.try_lock() {
                                             let bars_data = Self::create_bar_data(&buffer);
-                                            
                                             
                                             let bars: Vec<Bar> = bars_data
                                                 .iter()
@@ -188,26 +272,78 @@ impl eframe::App for DamageAnalyzer {
                                                         .width(0.7)
                                                 })
                                                 .collect();
-    
+        
                                             let names: Vec<String> = bars_data.iter()
                                                 .map(|(name, _, _)| name.clone())
                                                 .collect();
-    
+        
                                             let chart = BarChart::new(bars)
                                                 .element_formatter(Box::new(move |bar: &Bar, _: &BarChart| {
                                                     names[bar.argument as usize].clone()
                                                 }));
-    
+        
                                             plot_ui.bar_chart(chart);
                                         }
                                     });
                             });
                         });
                     });
-                });   
+                });
             });
         });
-        
+
+        if self.show_connection_settings {
+            egui::Window::new("Connection Settings")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Server:");
+                        ui.text_edit_singleline(&mut self.server_addr);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Port:");
+                        ui.text_edit_singleline(&mut self.server_port);
+                    });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Connect").clicked() {
+                            self.show_connection_settings = false;
+                            self.disconnect();
+                            self.next_connect_attempt = None;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_connection_settings = false;
+                        }
+                    });
+                });
+        }
+
+        if !self.connected {
+            let now = std::time::Instant::now();
+            
+            if self.next_connect_attempt.map_or(true, |t| now >= t) {
+                let addr = format!("{}:{}", self.server_addr, self.server_port);
+                match self.network.connect(&addr) {
+                    Ok(()) => {
+                        let (tx, rx) = mpsc::channel(100);
+                        self.rx = Some(rx);
+                        if let Err(e) = self.network.start_receiving(tx) {
+                            self.log_message(&format!("Failed to start receiver: {}", e));
+                            self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
+                        } else {
+                            self.connected = true;
+                            self.next_connect_attempt = None;
+                            self.log_message(&format!("Connected to {}", addr));
+                        }
+                    }
+                    Err(_) => {
+                        self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
+                    }
+                }
+            }
+        }
+
         let packets = if let Some(rx) = &mut self.rx {
             let mut collected = Vec::new();
             while let Ok(packet) = rx.try_recv() {
@@ -221,8 +357,9 @@ impl eframe::App for DamageAnalyzer {
         for packet in packets {
             match packet.r#type.as_str() {
                 "SetBattleLineup" => self.handle_lineup(&packet.data),
+                "BattleBegin" => self.handle_battle_begin(&packet.data),
                 "OnDamage" => self.handle_damage(&packet.data),
-                "TurnEnd" => self.handle_turn_end(&packet.data),
+                "TurnEnd" => self.handle_turn_end(&packet.data), 
                 "OnKill" => self.handle_kill(&packet.data),
                 "BattleEnd" => self.handle_battle_end(),
                 _ => self.log_message(&format!("Unknown packet type: {}", packet.r#type)),
@@ -250,32 +387,6 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
 }
 
 impl DamageAnalyzer {
-    fn toggle_connection(&mut self) {
-        if self.connected {
-            self.disconnect();
-        } else {
-            self.connect();
-        }
-    }
-
-    fn connect(&mut self) {
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        match self.network.connect(&addr) {
-            Ok(()) => {
-                let (tx, rx) = mpsc::channel(100);
-                self.rx = Some(rx);
-                if let Err(e) = self.network.start_receiving(tx) {
-                    self.log_message(&format!("Failed to start receiver: {}", e));
-                    return;
-                }
-                self.connected = true;
-                self.log_message(&format!("Connected to {}", addr));
-            }
-            Err(e) => {
-                self.log_message(&format!("Connection failed: {}", e));
-            }
-        }
-    }
 
     fn disconnect(&mut self) {
         self.network.disconnect();
@@ -291,18 +402,6 @@ impl DamageAnalyzer {
         } else {
             "Window unpinned"
         });
-    }
-
-    // moved
-    fn handle_packet(&mut self, packet: Packet) {
-        match packet.r#type.as_str() {
-            "SetBattleLineup" => self.handle_lineup(&packet.data),
-            "OnDamage" => self.handle_damage(&packet.data),
-            "TurnEnd" => self.handle_turn_end(&packet.data),
-            "OnKill" => self.handle_kill(&packet.data),
-            "BattleEnd" => self.handle_battle_end(),
-            _ => self.log_message(&format!("Unknown packet type: {}", packet.r#type)),
-        }
     }
 
     fn handle_lineup(&mut self, data: &serde_json::Value) {
@@ -328,12 +427,8 @@ impl DamageAnalyzer {
                     }
 
                     if let Some(mut buffer) = self.data_buffer.try_lock() {
-                        let inner = &mut *buffer;
-                        inner.column_names = names.clone();
-                        inner.rows.clear();
-                        inner.total_damage.clear();
-                        inner.turn_damage.clear();
-                        inner.current_turn.clear();
+                        buffer.init_characters(&names);
+                        buffer.rows.clear();
                     }
 
                     self.log_message(&format!("Created CSV: {}", filename));
@@ -346,24 +441,31 @@ impl DamageAnalyzer {
         }
     }
 
+    fn handle_battle_begin(&mut self, _data: &serde_json::Value) {
+        self.log_message("Battle started");
+    }
+
     fn handle_damage(&mut self, data: &serde_json::Value) {
         if let Ok(damage_data) = serde_json::from_value::<DamageData>(data.clone()) {
             let attacker = damage_data.attacker.name.clone();
             let damage = damage_data.damage;
             
-            if damage > 0 {
+            if damage > 0.0 {
                 self.log_message(&format!("{} dealt {} damage", attacker, damage));
             }
             
             let mut should_write = false;
-            let mut row = Vec::new();
+            let mut row = vec![0.0; if let Some(buffer) = self.data_buffer.try_lock() {
+                buffer.column_names.len()
+            } else {
+                0
+            }];
             
             if let Some(mut buffer) = self.data_buffer.try_lock() {
-                row = vec![0; buffer.column_names.len()];
                 if let Some(idx) = buffer.column_names.iter().position(|name| name == &attacker) {
                     row[idx] = damage;
-                    *buffer.total_damage.entry(attacker.clone()).or_insert(0) += damage;
-                    *buffer.current_turn.entry(attacker.clone()).or_insert(0) += damage;
+                    *buffer.total_damage.entry(attacker.clone()).or_insert(0.0) += damage;
+                    *buffer.current_turn.entry(attacker.clone()).or_insert(0.0) += damage;
                     should_write = true;
                 }
                 buffer.rows.push(row.clone());
@@ -378,26 +480,6 @@ impl DamageAnalyzer {
         }
     }
 
-    fn handle_turn_end(&mut self, data: &serde_json::Value) {
-        if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
-            for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
-                if damage > 0 {
-                    self.log_message(&format!(
-                        "Turn summary - {}: {} damage",
-                        avatar.name, damage
-                    ));
-                }
-            }
-            self.log_message(&format!("Total turn damage: {}", turn_data.total_damage));
-            
-            if let Some(mut buffer) = self.data_buffer.try_lock() {
-                let current = buffer.current_turn.clone();
-                buffer.turn_damage.push(current);
-                buffer.current_turn.clear();
-            }
-        }
-    }
-
     fn handle_kill(&mut self, data: &serde_json::Value) {
         if let Ok(kill_data) = serde_json::from_value::<KillData>(data.clone()) {
             self.log_message(&format!("{} has killed", kill_data.attacker.name));
@@ -405,6 +487,35 @@ impl DamageAnalyzer {
     }
 
     fn handle_battle_end(&mut self) {
+        let final_turn_data = if let Some(mut buffer) = self.data_buffer.try_lock() {
+            if !buffer.current_turn.is_empty() {
+                let total_damage: f32 = buffer.current_turn.values().sum();
+                let final_turn = buffer.current_turn.clone();
+                let av = buffer.current_av;
+
+                buffer.update_dpav(total_damage, av);
+                buffer.turn_damage.push(final_turn.clone());
+
+                Some((final_turn, total_damage))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some((final_turn, total_damage)) = final_turn_data {
+            for (name, damage) in final_turn {
+                if damage > 0.0 {
+                    self.log_message(&format!(
+                        "Final turn summary - {}: {} damage",
+                        name, damage
+                    ));
+                }
+            }
+            self.log_message(&format!("Final turn total damage: {}", total_damage));
+        }
+
         self.csv_writer = None;
         self.log_message("Battle ended - CSV file closed");
         self.disconnect();
@@ -450,8 +561,8 @@ impl DamageAnalyzer {
         }
     }
 
-    fn create_pie_segments(damage_map: &HashMap<String, i64>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
-        let total: f64 = damage_map.values().sum::<i64>() as f64;
+    fn create_pie_segments(damage_map: &HashMap<String, f32>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
+        let total: f64 = damage_map.values().sum::<f32>() as f64;
         let mut segments = Vec::new();
         let mut start_angle = -std::f64::consts::FRAC_PI_2; 
 
@@ -486,6 +597,29 @@ impl DamageAnalyzer {
         
         data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         data
+    }
+
+    fn handle_turn_end(&mut self, data: &serde_json::Value) {
+        if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
+            for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
+                if damage > 0.0 {
+                    self.log_message(&format!(
+                        "Turn summary - {}: {} damage",
+                        avatar.name, damage
+                    ));
+                }
+            }
+            self.log_message(&format!("Total turn damage: {}", turn_data.total_damage));
+            
+            if let Some(mut buffer) = self.data_buffer.try_lock() {
+                buffer.current_av = turn_data.action_value;
+                buffer.av_history.push(turn_data.action_value);
+                buffer.update_dpav(turn_data.total_damage, turn_data.action_value);
+                let current = buffer.current_turn.clone();
+                buffer.turn_damage.push(current);
+                buffer.current_turn.clear();
+            }
+        }
     }
 }
 
