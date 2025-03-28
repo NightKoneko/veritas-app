@@ -15,8 +15,8 @@ async fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "Veritas App",
+        "Veritas",
         options,
-        Box::new(|cc| Box::new(app::DamageAnalyzer::new(cc))),
+        Box::new(|cc| Ok(Box::new(app::DamageAnalyzer::new(cc)))),
     )
 }
