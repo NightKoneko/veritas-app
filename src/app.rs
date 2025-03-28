@@ -8,6 +8,8 @@ use csv::Writer;
 use serde::Deserialize;
 use crate::{models::*, network::NetworkClient};
 use egui::ComboBox;
+use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Theme {
@@ -44,17 +46,23 @@ pub struct DamageAnalyzer {
     csv_writer: Option<Writer<File>>,
     current_file: String,
     window_pinned: bool,
-    next_connect_attempt: Option<std::time::Instant>,
     show_connection_settings: bool,
     show_preferences: bool,
     theme: Theme,
+    connection_status_rx: Option<mpsc::Receiver<ConnectionStatus>>,
+}
+
+#[derive(Debug)]
+enum ConnectionStatus {
+    Connected(mpsc::Receiver<Packet>),
+    Failed(String),
 }
 
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(Theme::Light.visuals());
         
-        Self {
+        let mut instance = Self {
             server_addr: "127.0.0.1".to_string(),
             server_port: "1305".to_string(),
             network: NetworkClient::new(),
@@ -65,16 +73,56 @@ impl DamageAnalyzer {
             csv_writer: None,
             current_file: String::new(),
             window_pinned: false,
-            next_connect_attempt: None,
             show_connection_settings: false,
             show_preferences: false,
             theme: Theme::Light,
-        }
+            connection_status_rx: None,
+        };
+
+        instance.start_connection_thread();
+        
+        instance
     }
 
     fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
         self.theme = theme;
         ctx.set_visuals(theme.visuals());
+    }
+
+    fn start_connection_thread(&mut self) {
+        let server_addr = self.server_addr.clone();
+        let server_port = self.server_port.clone();
+        let (status_tx, status_rx) = mpsc::channel(1);
+        
+        thread::spawn(move || {
+            loop {
+                let addr = format!("{}:{}", server_addr, server_port);
+                let mut client = NetworkClient::new();
+                
+                match client.connect(&addr) {
+                    Ok(()) => {
+                        let (tx, rx) = mpsc::channel(100);
+                        match client.start_receiving(tx) {
+                            Ok(()) => {
+                                if status_tx.blocking_send(ConnectionStatus::Connected(rx)).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                if status_tx.blocking_send(ConnectionStatus::Failed(e.to_string())).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        thread::sleep(Duration::from_secs(5));
+                    }
+                }
+            }
+        });
+        
+        self.connection_status_rx = Some(status_rx);
     }
 }
 
@@ -100,6 +148,7 @@ impl eframe::App for DamageAnalyzer {
                 ui.label(if self.connected {
                     egui::RichText::new("Connected").color(egui::Color32::GREEN)
                 } else {
+                    // TODO: Make this not look terrible on light mode
                     egui::RichText::new("Connecting...").color(egui::Color32::YELLOW)
                 });
                 
@@ -353,7 +402,6 @@ impl eframe::App for DamageAnalyzer {
                         if ui.button("Connect").clicked() {
                             self.show_connection_settings = false;
                             self.disconnect();
-                            self.next_connect_attempt = None;
                         }
                         if ui.button("Cancel").clicked() {
                             self.show_connection_settings = false;
@@ -390,25 +438,16 @@ impl eframe::App for DamageAnalyzer {
         }
 
         if !self.connected {
-            let now = std::time::Instant::now();
-            
-            if self.next_connect_attempt.map_or(true, |t| now >= t) {
-                let addr = format!("{}:{}", self.server_addr, self.server_port);
-                match self.network.connect(&addr) {
-                    Ok(()) => {
-                        let (tx, rx) = mpsc::channel(100);
-                        self.rx = Some(rx);
-                        if let Err(e) = self.network.start_receiving(tx) {
-                            self.log_message(&format!("Failed to start receiver: {}", e));
-                            self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
-                        } else {
-                            self.connected = true;
-                            self.next_connect_attempt = None;
-                            self.log_message(&format!("Connected to {}", addr));
-                        }
+            if let Some(status) = self.connection_status_rx.as_mut().and_then(|rx| rx.try_recv().ok()) {
+                match status {
+                    ConnectionStatus::Connected(packet_rx) => {
+                        self.rx = Some(packet_rx);
+                        self.connected = true;
+                        let addr = format!("{}:{}", self.server_addr, self.server_port);
+                        self.log_message(&format!("Connected to {}", addr));
                     }
-                    Err(_) => {
-                        self.next_connect_attempt = Some(now + std::time::Duration::from_secs(5));
+                    ConnectionStatus::Failed(err) => {
+                        self.log_message(&format!("Failed to connect: {}", err));
                     }
                 }
             }
@@ -462,6 +501,7 @@ impl DamageAnalyzer {
         self.network.disconnect();
         self.connected = false;
         self.rx = None;
+        self.start_connection_thread();
         self.log_message("Disconnected");
     }
 
