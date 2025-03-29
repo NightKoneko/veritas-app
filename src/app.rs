@@ -1,9 +1,12 @@
 use std::sync::Arc;
+use std::time::Duration;
 use eframe::egui::{self};
 use tokio::runtime::Runtime;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
-use crate::core::message_logger::MessageLogger;
-use crate::core::packet_handler::PacketHandler;
+use tokio::time::sleep;
+use crate::core::message_logger::{self, MessageLogger};
+use crate::core::packet_handler::{self, PacketHandler};
 use crate::core::models::*;
 use crate::core::network::{ConnectionStatus, NetworkClient};
 
@@ -45,6 +48,7 @@ pub struct DamageAnalyzer {
     pub connected: Arc<Mutex<bool>>,
     pub data_buffer: Arc<DataBuffer>,
     pub message_logger: Arc<Mutex<MessageLogger>>,
+    pub packet_handler: Arc<Mutex<PacketHandler>>,
     pub state: AppState,
     pub runtime: Runtime
 }
@@ -53,15 +57,26 @@ impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(Theme::Light.visuals());
         egui_material_icons::initialize(&cc.egui_ctx);
-        let (status_tx, mut status_rx) = mpsc::channel(1);
-        let (payload_tx, mut payload_rx) = mpsc::channel(100);
+
+        let message_logger = Arc::new(
+            Mutex::new(
+                MessageLogger::default()
+            )
+        );
+        let data_buffer = Arc::new(DataBuffer::new());
+        let packet_handler = Arc::new(
+            Mutex::new(
+                PacketHandler::new(message_logger.clone(), data_buffer.clone())
+            )
+        );
 
         let app = Self {
             server_addr: Mutex::new("127.0.0.1".to_string()).into(),
             server_port: Mutex::new("1305".to_string()).into(),
             connected: Mutex::new(false).into(),
-            data_buffer: DataBuffer::new().into(),
-            message_logger: Mutex::new(MessageLogger::default()).into(),
+            data_buffer,
+            message_logger,
+            packet_handler,
             state: AppState { 
                 theme: Theme::Light,
                 is_sidebar_expanded: false,
@@ -71,27 +86,61 @@ impl DamageAnalyzer {
             },
             runtime: Runtime::new().unwrap()
         };
-        
-        {
-            let server_addr = app.server_addr.clone();
-            let server_port = app.server_port.clone();
-    
-            app.runtime.spawn(async move {
-                let mut network_client = NetworkClient::new();
-                network_client.start_connecting(&payload_tx, &status_tx, &server_addr.clone(), &server_port.clone()).await;
-            });    
-        }
 
-        {
+
+        // Enter the runtime so that `tokio::spawn` is available immediately.
+        let _enter = app.runtime.enter();
+
+        app.start_background_workers();
+
+        app
+    }
+
+    fn start_background_workers(&self) {
+        let (status_tx, status_rx) = mpsc::channel(1);
+        let (payload_tx, payload_rx) = mpsc::channel(100);
+
+        self.start_connection_worker(payload_tx, status_tx);
+        self.start_logger_worker(payload_rx);
+        self.start_connection_status_worker(status_rx);
+    }
+
+    fn start_logger_worker(&self, mut payload_rx: mpsc::Receiver<Packet>) {
+        let packet_handler = self.packet_handler.clone();
+
+        self.runtime.spawn(async move {
+            loop {
+                let mut packet_handler = packet_handler.lock().await;
+                packet_handler.handle_packets(&mut payload_rx).await;
+                drop(packet_handler);
+                sleep(Duration::from_millis(10)).await;
+            }
+        });
+    }
+    
+    fn start_connection_worker(&self, payload_tx: mpsc::Sender<Packet>, status_tx: mpsc::Sender<ConnectionStatus>) {
+        let server_addr = self.server_addr.clone();
+        let server_port = self.server_port.clone();
+
+        self.runtime.spawn(async move {
+            let mut network_client = NetworkClient::new();
+            loop {
+                network_client.start_connection(&payload_tx, &status_tx, &server_addr.clone(), &server_port.clone()).await;
+                sleep(Duration::from_secs(2)).await;
+            }
+        });    
+    }
+
+    fn start_connection_status_worker(&self, mut status_rx: Receiver<ConnectionStatus>) {
             // This is kinda useless bc we don't know when the connection has been severed
             // For it to try to reconnect again
-            let server_addr = app.server_addr.clone();
-            let server_port = app.server_port.clone();
+            let server_addr = self.server_addr.clone();
+            let server_port = self.server_port.clone();
             
-            let connected = app.connected.clone();
-            let message_logger = app.message_logger.clone();
+            let connected = self.connected.clone();
+            let message_logger = self.message_logger.clone();
 
-            app.runtime.spawn(async move {
+            self.runtime.spawn(async move {
                 loop {
                     let mut connected_lock = connected.lock().await;
                     if !*connected_lock {
@@ -109,24 +158,11 @@ impl DamageAnalyzer {
                                 }
                             }
                         }
-                    }        
+                    }
+                    drop(connected_lock);
+                    sleep(Duration::from_secs(2)).await;
                 }
             });    
-        }
-
-        {
-            let message_logger = app.message_logger.clone();
-            let data_buffer = app.data_buffer.clone();
-
-            app.runtime.spawn(async move {
-                let mut packet_handler = PacketHandler::new(message_logger, data_buffer);
-                loop {
-                    packet_handler.handle_packets(&mut payload_rx).await;
-                }
-            });
-        }
-
-        app
     }
 
     pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
@@ -146,6 +182,6 @@ impl eframe::App for DamageAnalyzer {
 
         self.show_central_panel(ctx, _frame);
 
-        ctx.request_repaint();
+        ctx.request_repaint_after(Duration::from_millis(100));
     }
 }

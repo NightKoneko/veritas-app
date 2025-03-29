@@ -24,6 +24,7 @@ impl PacketHandler {
             current_file: String::new()
         }
     }
+
     pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) {
         let messager_logger_clone = self.message_logger.clone();
         let mut message_logger_lock = messager_logger_clone.lock().await;
