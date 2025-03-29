@@ -167,6 +167,7 @@ impl eframe::App for DamageAnalyzer {
             match packet.r#type.as_str() {
                 "SetBattleLineup" => self.handle_lineup(&packet.data),
                 "BattleBegin" => self.handle_battle_begin(&packet.data),
+                "TurnBegin" => self.handle_turn_begin(&packet.data),
                 "OnDamage" => self.handle_damage(&packet.data),
                 "TurnEnd" => self.handle_turn_end(&packet.data), 
                 "OnKill" => self.handle_kill(&packet.data),
@@ -410,6 +411,17 @@ impl DamageAnalyzer {
         data
     }
 
+    fn handle_turn_begin(&mut self, data: &serde_json::Value) {
+        if let Ok(turn_data) = serde_json::from_value::<TurnBeginData>(data.clone()) {
+            if let Some(mut buffer) = self.data_buffer.try_lock() {
+                buffer.current_av = turn_data.action_value;
+                buffer.av_history.push(turn_data.action_value);
+            }
+            // debug remember to remove
+            self.log_message(&format!("Turn begin - AV: {:.2}", turn_data.action_value));
+        }
+    }
+
     fn handle_turn_end(&mut self, data: &serde_json::Value) {
         if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
             for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
@@ -423,9 +435,13 @@ impl DamageAnalyzer {
             self.log_message(&format!("Total turn damage: {}", turn_data.total_damage));
             
             if let Some(mut buffer) = self.data_buffer.try_lock() {
-                buffer.current_av = turn_data.action_value;
-                buffer.av_history.push(turn_data.action_value);
-                buffer.update_dpav(turn_data.total_damage, turn_data.action_value);
+                let turn_total: f32 = turn_data.total_damage;
+                let current_av = buffer.current_av;
+                
+                if current_av > 0.0 {
+                    buffer.update_dpav(turn_total, current_av);
+                }
+                
                 let current = buffer.current_turn.clone();
                 buffer.turn_damage.push(current);
                 buffer.current_turn.clear();

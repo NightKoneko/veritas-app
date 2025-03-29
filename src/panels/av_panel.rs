@@ -38,6 +38,9 @@ impl DamageAnalyzer {
                         .auto_bounds([false, true])
                         .allow_drag(false)
                         .allow_zoom(false)
+                        .x_axis_label("Turn")
+                        .y_axis_label("DpAV")
+                        .y_axis_formatter(|y, _| format!("{:.1}", y.value))
                         .show(ui, |plot_ui| {
                             if !buffer.dpav_history.is_empty() {
                                 let points: Vec<[f64; 2]> = buffer
@@ -48,7 +51,9 @@ impl DamageAnalyzer {
                                     .collect();
 
                                 plot_ui.line(
-                                    Line::new(PlotPoints::from(points)).name("DpAV").width(2.0),
+                                    Line::new(PlotPoints::from(points))
+                                        .name("DpAV")
+                                        .width(2.0),
                                 );
                             }
                         });
