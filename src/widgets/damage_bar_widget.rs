@@ -26,6 +26,15 @@ impl DamageAnalyzer {
             .allow_drag(false)
             .allow_zoom(false)
             .y_axis_formatter(|y, _| Self::format_damage(y.value))
+            .x_axis_formatter(|x, _| {
+                if let Some(buffer) = self.data_buffer.try_lock() {
+                    let bars_data = create_bar_data(&buffer);
+                    if let Some((name, _, _)) = bars_data.get(x.value.floor() as usize) {
+                        return name.clone();
+                    }
+                }
+                String::new()
+            })
             .show(ui, |plot_ui| {
                 if let Some(buffer) = self.data_buffer.try_lock() {
                     let bars_data = create_bar_data(&buffer);
@@ -41,13 +50,7 @@ impl DamageAnalyzer {
                         })
                         .collect();
 
-                    let names: Vec<String> =
-                        bars_data.iter().map(|(name, _, _)| name.clone()).collect();
-
-                    let chart = BarChart::new(bars).element_formatter(Box::new(
-                        move |bar: &Bar, _: &BarChart| names[bar.argument as usize].clone(),
-                    ));
-
+                    let chart = BarChart::new(bars);
                     plot_ui.bar_chart(chart);
                 }
             });

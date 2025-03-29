@@ -18,6 +18,10 @@ pub struct TurnData {
     pub avatars: Vec<Avatar>,
     pub avatars_damage: Vec<f32>,
     pub total_damage: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TurnBeginData {
     pub action_value: f32,
 }
 

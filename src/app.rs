@@ -326,9 +326,15 @@ impl DamageAnalyzer {
             self.log_message(&format!("Total turn damage: {}", turn_data.total_damage));
             
             if let Some(mut buffer) = self.data_buffer.try_lock() {
-                buffer.current_av = turn_data.action_value;
-                buffer.av_history.push(turn_data.action_value);
-                buffer.update_dpav(turn_data.total_damage, turn_data.action_value);
+                let turn_total: f32 = turn_data.total_damage;
+                let current_av = buffer.current_av;
+                
+                buffer.av_history.push(current_av);
+                
+                if current_av > 0.0 {
+                    buffer.update_dpav(turn_total, current_av);
+                }
+                
                 let current = buffer.current_turn.clone();
                 buffer.turn_damage.push(current);
                 buffer.current_turn.clear();
