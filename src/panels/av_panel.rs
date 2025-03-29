@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
 
-use crate::app::DamageAnalyzer;
+use crate::{app::DamageAnalyzer, core::helpers};
 
 impl DamageAnalyzer {
     pub fn show_av_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -21,7 +21,7 @@ impl DamageAnalyzer {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Total Damage:");
-                    ui.label(Self::format_damage(
+                    ui.label(helpers::format_damage(
                         data_buffer.total_damage.values().sum::<f32>() as f64,
                     ));
                 });
@@ -69,11 +69,11 @@ impl DamageAnalyzer {
                     .allow_zoom(false)
                     .x_axis_label("Action Value")
                     .y_axis_label("Damage")
-                    .y_axis_formatter(|y, _| Self::format_damage(y.value))
+                    .y_axis_formatter(|y, _| helpers::format_damage(y.value))
                     .show(ui, |plot_ui| {
                         if !data_buffer.av_history.is_empty() {
                             for (i, name) in data_buffer.column_names.iter().enumerate() {
-                                let color = DamageAnalyzer::get_character_color(i);
+                                let color = helpers::get_character_color(i);
                                 let mut points: Vec<(f32, f32)> = data_buffer.av_history.iter()
                                     .zip(0..data_buffer.turn_damage.len())
                                     .map(|(&av, turn_idx)| {

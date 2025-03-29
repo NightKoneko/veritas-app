@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use eframe::egui::{Stroke, Ui};
 use egui_plot::{Legend, Plot, PlotPoints, Polygon};
 
-use crate::app::DamageAnalyzer;
+use crate::{app::DamageAnalyzer, core::helpers};
 
 
 pub struct PieSegment {
@@ -73,7 +73,7 @@ impl DamageAnalyzer {
                         create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);
 
                     for (name, segment, i) in segments {
-                        let color = DamageAnalyzer::get_character_color(i);
+                        let color = helpers::get_character_color(i);
                         let percentage = segment.value / total * 100.0;
 
                         let plot_points = PlotPoints::new(segment.points);
@@ -83,7 +83,7 @@ impl DamageAnalyzer {
                                 "{}: {:.1}% ({} dmg)",
                                 name,
                                 percentage,
-                                Self::format_damage(segment.value)
+                                helpers::format_damage(segment.value)
                             ));
 
                         plot_ui.polygon(polygon);
