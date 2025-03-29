@@ -397,27 +397,20 @@ impl DamageAnalyzer {
     }
 
     pub fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {
-        
-        let mut data: Vec<_> = buffer.column_names.iter()
+        buffer.column_names.iter()
             .enumerate()
             .filter_map(|(i, name)| {
                 buffer.total_damage.get(name)
                     .map(|&damage| (name.clone(), damage as f64, i))
             })
-            .collect();
-        
-        
-        data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        data
+            .collect()
     }
 
     fn handle_turn_begin(&mut self, data: &serde_json::Value) {
         if let Ok(turn_data) = serde_json::from_value::<TurnBeginData>(data.clone()) {
             if let Some(mut buffer) = self.data_buffer.try_lock() {
                 buffer.current_av = turn_data.action_value;
-                buffer.av_history.push(turn_data.action_value);
             }
-            // debug remember to remove
             self.log_message(&format!("Turn begin - AV: {:.2}", turn_data.action_value));
         }
     }
@@ -437,6 +430,8 @@ impl DamageAnalyzer {
             if let Some(mut buffer) = self.data_buffer.try_lock() {
                 let turn_total: f32 = turn_data.total_damage;
                 let current_av = buffer.current_av;
+                
+                buffer.av_history.push(current_av);
                 
                 if current_av > 0.0 {
                     buffer.update_dpav(turn_total, current_av);

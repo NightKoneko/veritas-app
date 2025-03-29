@@ -35,7 +35,7 @@ impl DamageAnalyzer {
                     Plot::new("dpav_plot")
                         .height(200.0)
                         .include_y(0.0)
-                        .auto_bounds([false, true])
+                        .auto_bounds_x()
                         .allow_drag(false)
                         .allow_zoom(false)
                         .x_axis_label("Turn")
@@ -64,41 +64,40 @@ impl DamageAnalyzer {
                     Plot::new("dmg_av_plot")
                         .height(200.0)
                         .include_y(0.0)
-                        .auto_bounds([false, true])
+                        .auto_bounds_x()
                         .allow_drag(false)
                         .allow_zoom(false)
                         .x_axis_label("Action Value")
                         .y_axis_label("Damage")
                         .y_axis_formatter(|y, _| Self::format_damage(y.value))
                         .show(ui, |plot_ui| {
-                            if !buffer.turn_damage.is_empty() {
+                            if !buffer.av_history.is_empty() {
                                 for (i, name) in buffer.column_names.iter().enumerate() {
                                     let color = self.get_character_color(i);
-                                    let points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
-                                        .map(|turn_idx| {
-                                            let damage = buffer
-                                                .turn_damage
+                                    let mut points: Vec<(f32, f32)> = buffer.av_history.iter()
+                                        .zip(0..buffer.turn_damage.len())
+                                        .map(|(&av, turn_idx)| {
+                                            let damage = buffer.turn_damage
                                                 .get(turn_idx)
                                                 .and_then(|turn| turn.get(name))
                                                 .copied()
                                                 .unwrap_or(0.0);
-                                            let av = buffer
-                                                .av_history
-                                                .get(turn_idx)
-                                                .copied()
-                                                .unwrap_or(0.0);
-                                            [av as f64, damage as f64]
+                                            (av, damage)
                                         })
                                         .collect();
 
-                                    if !points.is_empty() {
-                                        plot_ui.line(
-                                            Line::new(PlotPoints::from(points))
-                                                .name(name)
-                                                .color(color)
-                                                .width(2.0),
-                                        );
-                                    }
+                                    points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+                                    let plot_points = points.into_iter()
+                                        .map(|(av, damage)| [av as f64, damage as f64])
+                                        .collect::<Vec<_>>();
+
+                                    plot_ui.line(
+                                        Line::new(PlotPoints::from(plot_points))
+                                            .name(name)
+                                            .color(color)
+                                            .width(2.0),
+                                    );
                                 }
                             }
                         });

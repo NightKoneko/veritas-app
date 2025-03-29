@@ -9,7 +9,7 @@ impl DamageAnalyzer {
             .legend(Legend::default())
             .height(250.0)
             .include_y(0.0)
-            .auto_bounds([false, true])
+            .auto_bounds_x()
             .allow_drag(false)
             .allow_zoom(false)
             .x_axis_label("Turn")
