@@ -1,7 +1,8 @@
 use eframe::egui::Ui;
 use egui_plot::{Bar, BarChart, Legend, Plot};
 
-use crate::{app::DamageAnalyzer, models::DataBufferInner};
+use crate::app::DamageAnalyzer;
+use crate::core::models::DataBufferInner;
 
 fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {        
     let mut data: Vec<_> = buffer.column_names.iter()

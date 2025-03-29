@@ -1,13 +1,11 @@
-use std::sync::{Arc};
-use std::fs::{self, File};
+use std::sync::Arc;
 use eframe::egui::{self};
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, Mutex};
-use csv::Writer;
-use crate::message_logger::MessageLogger;
-use crate::packet_handler::PacketHandler;
-use crate::{models::*, packet_handler};
-use crate::network::{ConnectionStatus, NetworkClient};
+use crate::core::message_logger::MessageLogger;
+use crate::core::packet_handler::PacketHandler;
+use crate::core::models::*;
+use crate::core::network::{ConnectionStatus, NetworkClient};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Theme {
@@ -33,18 +31,39 @@ impl Theme {
     pub const ALL: &'static [Theme] = &[Theme::Dark, Theme::Light];
 }
 
+pub struct AppState {
+    pub theme: Theme,
+    pub is_sidebar_expanded: bool,
+    pub is_window_pinned: bool,
+    pub show_connection_settings: bool,
+    pub show_preferences: bool
+}
+
+
 pub struct DamageAnalyzer {
     pub server_addr: Arc<Mutex<String>>,
     pub server_port: Arc<Mutex<String>>,
     pub connected: Arc<Mutex<bool>>,
     pub data_buffer: Arc<DataBuffer>,
     pub message_logger: Arc<Mutex<MessageLogger>>,
-    pub window_pinned: bool,
-    pub show_connection_settings: bool,
-    pub show_preferences: bool,
-    pub theme: Theme,
-    pub is_sidebar_expanded: bool,
+    pub state: AppState,
     pub runtime: Runtime
+}
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_min_inner_size([800.0, 600.0])
+            .with_window_level(egui::WindowLevel::Normal),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Veritas",
+        options,
+        Box::new(|cc| Ok(Box::new(DamageAnalyzer::new(cc)))),
+    )
 }
 
 impl DamageAnalyzer {
@@ -60,11 +79,13 @@ impl DamageAnalyzer {
             connected: Mutex::new(false).into(),
             data_buffer: DataBuffer::new().into(),
             message_logger: Mutex::new(MessageLogger::default()).into(),
-            window_pinned: false,
-            show_connection_settings: false,
-            show_preferences: false,
-            theme: Theme::Light,
-            is_sidebar_expanded: false,
+            state: AppState { 
+                theme: Theme::Light,
+                is_sidebar_expanded: false,
+                is_window_pinned: false,
+                show_connection_settings: false, 
+                show_preferences: false
+            },
             runtime: Runtime::new().unwrap()
         };
         
@@ -79,8 +100,10 @@ impl DamageAnalyzer {
         }
 
         {
+            // This is kinda useless bc we don't know the connection has been severed
             let server_addr = app.server_addr.clone();
             let server_port = app.server_port.clone();
+            
             let connected = app.connected.clone();
             let message_logger = app.message_logger.clone();
 
@@ -94,11 +117,11 @@ impl DamageAnalyzer {
                                 ConnectionStatus::Connected => {
                                     *connected_lock = true;
                                     let addr = format!("{}:{}", server_addr.lock().await, server_port.lock().await);
-                                    message_logger_lock.log_message(&format!("Connected to {}", addr));
+                                    message_logger_lock.log(&format!("Connected to {}", addr));
                                 }
                                 ConnectionStatus::Failed(err) => {
                                     *connected_lock = false;
-                                    message_logger_lock.log_message(&format!("Failed to connect: {}", err));
+                                    message_logger_lock.log(&format!("Failed to connect: {}", err));
                                 }
                             }
                         }
@@ -123,7 +146,7 @@ impl DamageAnalyzer {
     }
 
     pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
-        self.theme = theme;
+        self.state.theme = theme;
         ctx.set_visuals(theme.visuals());
     }
 

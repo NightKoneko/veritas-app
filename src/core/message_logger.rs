@@ -4,7 +4,7 @@ pub struct MessageLogger {
 }
 
 impl MessageLogger {
-    pub fn log_message(&mut self, message: &str) {
+    pub fn log(&mut self, message: &str) {
         let timestamp = chrono::Local::now().format("%H:%M:%S");
         let formatted = format!("[{}] {}", timestamp, message);
         self.logs.push(formatted);

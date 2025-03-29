@@ -1,10 +1,7 @@
 mod app;
-mod models;
-mod network;
-pub mod panels;
-pub mod widgets;
-pub mod message_logger;
-pub mod packet_handler;
+mod core;
+mod widgets;
+mod panels;
 
 use eframe::egui;
 
@@ -16,7 +13,6 @@ fn main() -> eframe::Result<()> {
             .with_window_level(egui::WindowLevel::Normal),
         ..Default::default()
     };
-
 
     eframe::run_native(
         "Veritas",

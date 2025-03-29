@@ -3,7 +3,7 @@ use tokio::{io::AsyncReadExt, sync::Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use anyhow::{Result, anyhow};
-use crate::models::Packet;
+use crate::core::models::Packet;
 
 
 #[derive(Debug)]
@@ -24,6 +24,7 @@ impl NetworkClient {
         }
     }
 
+    // Can we handle this better?
     pub async fn start_connecting(
         &mut self,
         payload_tx: &mpsc::Sender<Packet>,

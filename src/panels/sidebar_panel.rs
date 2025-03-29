@@ -7,7 +7,7 @@ impl DamageAnalyzer {
         egui::SidePanel::left("Sidebar")
             .max_width(48.0)
             .resizable(false)
-            .show_separator_line(!self.is_sidebar_expanded)
+            .show_separator_line(!self.state.is_sidebar_expanded)
             .show(ctx, |ui| {
                 ui.with_layout(
                     egui::Layout::from_main_dir_and_cross_align(
@@ -21,7 +21,7 @@ impl DamageAnalyzer {
                             .frame(false);
 
                         if ui.add_sized([23.0, 23.0], button).clicked() {
-                            self.is_sidebar_expanded = !self.is_sidebar_expanded;
+                            self.state.is_sidebar_expanded = !self.state.is_sidebar_expanded;
                         }
                     },
                 );
@@ -30,7 +30,7 @@ impl DamageAnalyzer {
         egui::SidePanel::left("Sidebar_MainPanel")
             .resizable(false) // make the side panel resizable
             .min_width(100.0) // Minimum width of the side panel
-            .show_animated(ctx, self.is_sidebar_expanded, |ui| {
+            .show_animated(ctx, self.state.is_sidebar_expanded, |ui| {
                 // TODO: add more buttons
                 self.show_log_widget(ui)
             });

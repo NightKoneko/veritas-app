@@ -4,9 +4,9 @@ use crate::app::DamageAnalyzer;
 
 impl DamageAnalyzer {
     fn toggle_pin(&mut self) {
-        self.window_pinned = !self.window_pinned;
+        self.state.is_window_pinned = !self.state.is_window_pinned;
         let mut message_logger = self.message_logger.blocking_lock();
-        message_logger.log_message(if self.window_pinned {
+        message_logger.log(if self.state.is_window_pinned {
             "Window pinned on top"
         } else {
             "Window unpinned"
@@ -27,7 +27,7 @@ impl DamageAnalyzer {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .button(if self.window_pinned {
+                        .button(if self.state.is_window_pinned {
                             "Unpin Window"
                         } else {
                             "Pin Window"
