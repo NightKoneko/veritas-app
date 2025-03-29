@@ -22,6 +22,7 @@ impl DamageAnalyzer {
 
                         ui.vertical(|ui| {
                             ui.group(|ui| {
+                                ui.heading("Total Damage by Character");
                                 self.show_damage_bar_widget(ui);
                             });
                         });

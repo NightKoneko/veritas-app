@@ -31,6 +31,17 @@ pub struct Packet {
     pub data: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct KillData {
+    pub attacker: Avatar,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetupData {
+    pub avatars: Vec<Avatar>,
+}
+
+
 #[derive(Debug)]
 pub struct DataBuffer {
     inner: Mutex<DataBufferInner>,

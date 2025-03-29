@@ -26,18 +26,18 @@ impl DamageAnalyzer {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Server:");
-                        ui.text_edit_singleline(&mut self.server_addr);
+                        let binding = self.server_addr.clone();
+                        let mut server_addr = binding.lock().unwrap();
+                        ui.text_edit_singleline(&mut (*server_addr));
                     });
                     ui.horizontal(|ui| {
                         ui.label("Port:");
-                        ui.text_edit_singleline(&mut self.server_port);
+                        let binding = self.server_port.clone();
+                        let mut server_port = binding.lock().unwrap();
+                        ui.text_edit_singleline(&mut (*server_port));
                     });
                     ui.separator();
                     ui.horizontal(|ui| {
-                        if ui.button("Connect").clicked() {
-                            self.show_connection_settings = false;
-                            self.disconnect();
-                        }
                         if ui.button("Cancel").clicked() {
                             self.show_connection_settings = false;
                         }
