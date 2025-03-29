@@ -1,7 +1,21 @@
 use eframe::egui::Ui;
 use egui_plot::{Bar, BarChart, Legend, Plot};
 
-use crate::app::DamageAnalyzer;
+use crate::{app::DamageAnalyzer, models::DataBufferInner};
+
+fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {        
+    let mut data: Vec<_> = buffer.column_names.iter()
+        .enumerate()
+        .filter_map(|(i, name)| {
+            buffer.total_damage.get(name)
+                .map(|&damage| (name.clone(), damage as f64, i))
+        })
+        .collect();
+    
+    
+    data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    data
+}
 
 impl DamageAnalyzer {
     pub fn show_damage_bar_widget(&mut self, ui: &mut Ui) {
@@ -14,7 +28,7 @@ impl DamageAnalyzer {
             .y_axis_formatter(|y, _| Self::format_damage(y.value))
             .show(ui, |plot_ui| {
                 if let Some(buffer) = self.data_buffer.try_lock() {
-                    let bars_data = Self::create_bar_data(&buffer);
+                    let bars_data = create_bar_data(&buffer);
 
                     let bars: Vec<Bar> = bars_data
                         .iter()

@@ -1,13 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::fs::{self, File};
-use std::collections::HashMap;
+use std::time::Duration;
 use eframe::egui::{self};
-use serde::Deserialize;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use csv::Writer;
+use crate::core::{self, ConnectionStatus};
 use crate::{models::*, network::NetworkClient};
-use std::thread;
-use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Theme {
@@ -34,27 +33,21 @@ impl Theme {
 }
 
 pub struct DamageAnalyzer {
-    pub server_addr: String,
-    pub server_port: String,
-    pub network: NetworkClient,
+    pub server_addr: Arc<Mutex<String>>,
+    pub server_port: Arc<Mutex<String>>,
     pub connected: bool,
     pub data_buffer: Arc<DataBuffer>,
     pub log_messages: Vec<String>,
-    pub rx: Option<mpsc::Receiver<Packet>>,
+    pub payload_rx: mpsc::Receiver<Packet>,
     pub csv_writer: Option<Writer<File>>,
     pub current_file: String,
     pub window_pinned: bool,
     pub show_connection_settings: bool,
     pub show_preferences: bool,
     pub theme: Theme,
-    pub connection_status_rx: Option<mpsc::Receiver<ConnectionStatus>>,
-    pub is_sidebar_expanded: bool
-}
-
-#[derive(Debug)]
-pub enum ConnectionStatus {
-    Connected(mpsc::Receiver<Packet>),
-    Failed(String),
+    pub connection_status_rx: mpsc::Receiver<ConnectionStatus>,
+    pub is_sidebar_expanded: bool,
+    pub runtime: Runtime
 }
 
 impl DamageAnalyzer {
@@ -62,27 +55,35 @@ impl DamageAnalyzer {
         cc.egui_ctx.set_visuals(Theme::Light.visuals());
         egui_material_icons::initialize(&cc.egui_ctx);
 
-        let mut instance = Self {
-            server_addr: "127.0.0.1".to_string(),
-            server_port: "1305".to_string(),
-            network: NetworkClient::new(),
+        let (status_tx, status_rx) = mpsc::channel(1);
+        let (payload_tx, payload_rx) = mpsc::channel(100);
+
+        let app = Self {
+            server_addr: Mutex::new("127.0.0.1".to_string()).into(),
+            server_port: Mutex::new("1305".to_string()).into(),
             connected: false,
             data_buffer: Arc::new(DataBuffer::new()),
             log_messages: Vec::new(),
-            rx: None,
+            payload_rx,
             csv_writer: None,
             current_file: String::new(),
             window_pinned: false,
             show_connection_settings: false,
             show_preferences: false,
             theme: Theme::Light,
-            connection_status_rx: None,
-            is_sidebar_expanded: false
+            connection_status_rx: status_rx,
+            is_sidebar_expanded: false,
+            runtime: Runtime::new().unwrap()
         };
+            
+        let server_addr = app.server_addr.clone();
+        let server_port = app.server_port.clone();
 
-        instance.start_connection_thread();
-        
-        instance
+        app.runtime.spawn(async move {
+            core::start_connection(&payload_tx, &status_tx, &server_addr, &server_port).await;
+        });
+
+        app
     }
 
     pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
@@ -90,40 +91,40 @@ impl DamageAnalyzer {
         ctx.set_visuals(theme.visuals());
     }
 
-    fn start_connection_thread(&mut self) {
-        let server_addr = self.server_addr.clone();
-        let server_port = self.server_port.clone();
-        let (status_tx, status_rx) = mpsc::channel(1);
-        
-        thread::spawn(move || {
-            loop {
-                let addr = format!("{}:{}", server_addr, server_port);
-                let mut client = NetworkClient::new();
-                
-                match client.connect(&addr) {
-                    Ok(()) => {
-                        let (tx, rx) = mpsc::channel(100);
-                        match client.start_receiving(tx) {
-                            Ok(()) => {
-                                if status_tx.blocking_send(ConnectionStatus::Connected(rx)).is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                if status_tx.blocking_send(ConnectionStatus::Failed(e.to_string())).is_err() {
-                                    break;
-                                }
-                            }
-                        }
+
+    fn on_try_to_connect(&mut self) {
+        if !self.connected {
+            if let Some(status) = self.connection_status_rx.try_recv().ok() {
+                match status {
+                    ConnectionStatus::Connected => {
+                        self.connected = true;
+                        let addr = format!("{}:{}", self.server_addr.lock().unwrap(), self.server_port.lock().unwrap());
+                        self.log_message(&format!("Connected to {}", addr));
                     }
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(500));
+                    ConnectionStatus::Failed(err) => {
+                        self.connected = false;
+                        self.log_message(&format!("Failed to connect: {}", err));
                     }
                 }
             }
-        });
-        
-        self.connection_status_rx = Some(status_rx);
+        }
+    }
+
+    fn handle_packets(&mut self) {
+        match self.payload_rx.try_recv() {
+            Ok(packet) => {
+                match packet.r#type.as_str() {
+                    "SetBattleLineup" => self.handle_lineup(&packet.data),
+                    "BattleBegin" => self.handle_battle_begin(&packet.data),
+                    "OnDamage" => self.handle_damage(&packet.data),
+                    "TurnEnd" => self.handle_turn_end(&packet.data), 
+                    "OnKill" => self.handle_kill(&packet.data),
+                    "BattleEnd" => self.handle_battle_end(),
+                    _ => self.log_message(&format!("Unknown packet type: {}", packet.r#type)),
+                }    
+            },
+            Err(_) => {},
+        }
     }
 }
 
@@ -137,75 +138,15 @@ impl eframe::App for DamageAnalyzer {
 
         self.show_central_panel(ctx, _frame);
 
-        if !self.connected {
-            if let Some(status) = self.connection_status_rx.as_mut().and_then(|rx| rx.try_recv().ok()) {
-                match status {
-                    ConnectionStatus::Connected(packet_rx) => {
-                        self.rx = Some(packet_rx);
-                        self.connected = true;
-                        let addr = format!("{}:{}", self.server_addr, self.server_port);
-                        self.log_message(&format!("Connected to {}", addr));
-                    }
-                    ConnectionStatus::Failed(err) => {
-                        self.log_message(&format!("Failed to connect: {}", err));
-                    }
-                }
-            }
-        }
-
-        let packets = if let Some(rx) = &mut self.rx {
-            let mut collected = Vec::new();
-            while let Ok(packet) = rx.try_recv() {
-                collected.push(packet);
-            }
-            collected
-        } else {
-            Vec::new()
-        };
-        
-        for packet in packets {
-            match packet.r#type.as_str() {
-                "SetBattleLineup" => self.handle_lineup(&packet.data),
-                "BattleBegin" => self.handle_battle_begin(&packet.data),
-                "OnDamage" => self.handle_damage(&packet.data),
-                "TurnEnd" => self.handle_turn_end(&packet.data), 
-                "OnKill" => self.handle_kill(&packet.data),
-                "BattleEnd" => self.handle_battle_end(),
-                _ => self.log_message(&format!("Unknown packet type: {}", packet.r#type)),
-            }
-        }
+        self.on_try_to_connect();
+        self.handle_packets();    
 
         ctx.request_repaint();
     }
 }
 
-fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
-    let center = [0.0, 0.0];
-    let radius = 0.8; 
-    let mut points = vec![center];
-    
-    let steps = 50;
-    let p = (end_angle - start_angle)/(steps as f64);
-    for i in 0..=steps {
-        let angle = start_angle + p*i as f64;
-        let (sin, cos) = angle.sin_cos();
-        points.push([cos * radius, sin * radius]);
-    }
-    points.push(center);
-    
-    points
-}
 
 impl DamageAnalyzer {
-
-    pub fn disconnect(&mut self) {
-        self.network.disconnect();
-        self.connected = false;
-        self.rx = None;
-        self.start_connection_thread();
-        self.log_message("Disconnected");
-    }
-
     pub fn toggle_pin(&mut self) {
         self.window_pinned = !self.window_pinned;
         self.log_message(if self.window_pinned {
@@ -329,7 +270,6 @@ impl DamageAnalyzer {
 
         self.csv_writer = None;
         self.log_message("Battle ended - CSV file closed");
-        self.disconnect();
     }
 
     pub fn format_damage(value: f64) -> String {
@@ -372,43 +312,6 @@ impl DamageAnalyzer {
         }
     }
 
-    pub fn create_pie_segments(damage_map: &HashMap<String, f32>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
-        let total: f64 = damage_map.values().sum::<f32>() as f64;
-        let mut segments = Vec::new();
-        let mut start_angle = -std::f64::consts::FRAC_PI_2; 
-
-        for (i, name) in column_names.iter().enumerate() {
-            if let Some(&damage) = damage_map.get(name) {
-                let fraction = damage as f64 / total;
-                let angle = fraction * std::f64::consts::TAU;
-                let end_angle = start_angle + angle;
-
-                segments.push((name.clone(), PieSegment {
-                    points: create_pie_slice(start_angle, end_angle),
-                    value: damage as f64,
-                }, i));
-
-                start_angle = end_angle;
-            }
-        }
-
-        segments
-    }
-
-    pub fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {
-        
-        let mut data: Vec<_> = buffer.column_names.iter()
-            .enumerate()
-            .filter_map(|(i, name)| {
-                buffer.total_damage.get(name)
-                    .map(|&damage| (name.clone(), damage as f64, i))
-            })
-            .collect();
-        
-        
-        data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        data
-    }
 
     fn handle_turn_end(&mut self, data: &serde_json::Value) {
         if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
@@ -432,19 +335,4 @@ impl DamageAnalyzer {
             }
         }
     }
-}
-
-pub struct PieSegment {
-    pub points: Vec<[f64; 2]>,
-    pub value: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct KillData {
-    attacker: Avatar,
-}
-
-#[derive(Debug, Deserialize)]
-struct SetupData {
-    avatars: Vec<Avatar>,
 }

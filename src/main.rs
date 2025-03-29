@@ -3,11 +3,11 @@ mod models;
 mod network;
 pub mod panels;
 pub mod widgets;
+pub mod core;
 
 use eframe::egui;
 
-#[tokio::main]
-async fn main() -> eframe::Result<()> {
+fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
@@ -15,6 +15,7 @@ async fn main() -> eframe::Result<()> {
             .with_window_level(egui::WindowLevel::Normal),
         ..Default::default()
     };
+
 
     eframe::run_native(
         "Veritas",
