@@ -39,7 +39,6 @@ pub struct AppState {
     pub show_preferences: bool
 }
 
-
 pub struct DamageAnalyzer {
     pub server_addr: Arc<Mutex<String>>,
     pub server_port: Arc<Mutex<String>>,
@@ -48,22 +47,6 @@ pub struct DamageAnalyzer {
     pub message_logger: Arc<Mutex<MessageLogger>>,
     pub state: AppState,
     pub runtime: Runtime
-}
-
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 800.0])
-            .with_min_inner_size([800.0, 600.0])
-            .with_window_level(egui::WindowLevel::Normal),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "Veritas",
-        options,
-        Box::new(|cc| Ok(Box::new(DamageAnalyzer::new(cc)))),
-    )
 }
 
 impl DamageAnalyzer {
@@ -100,7 +83,8 @@ impl DamageAnalyzer {
         }
 
         {
-            // This is kinda useless bc we don't know the connection has been severed
+            // This is kinda useless bc we don't know when the connection has been severed
+            // For it to try to reconnect again
             let server_addr = app.server_addr.clone();
             let server_port = app.server_port.clone();
             
@@ -164,38 +148,4 @@ impl eframe::App for DamageAnalyzer {
 
         ctx.request_repaint();
     }
-}
-
-
-impl DamageAnalyzer {
-    pub fn format_damage(value: f64) -> String {
-        if value >= 1_000_000.0 {
-            let m = value / 1_000_000.0;
-            if m.fract() < 0.1 {
-                format!("{}M", m.floor())
-            } else {
-                format!("{:.1}M", (value / 1_000_000.0).floor() * 10.0 / 10.0)
-            }
-        } else if value >= 1_000.0 {
-            format!("{}K", (value / 1_000.0).floor())
-        } else {
-            format!("{}", value.floor())
-        }
-    }
-
-    pub fn get_character_color(index: usize) -> egui::Color32 {
-        const COLORS: &[egui::Color32] = &[
-            egui::Color32::from_rgb(255, 99, 132),   
-            egui::Color32::from_rgb(54, 162, 235),   
-            egui::Color32::from_rgb(255, 206, 86),   
-            egui::Color32::from_rgb(75, 192, 192),   
-            egui::Color32::from_rgb(153, 102, 255),  
-            egui::Color32::from_rgb(255, 159, 64),   
-            egui::Color32::from_rgb(231, 233, 237),  
-            egui::Color32::from_rgb(102, 255, 102),  
-        ];
-        
-        COLORS[index % COLORS.len()]
-    }
-
 }

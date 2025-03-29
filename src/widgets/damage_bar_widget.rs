@@ -2,6 +2,7 @@ use eframe::egui::Ui;
 use egui_plot::{Bar, BarChart, Legend, Plot};
 
 use crate::app::DamageAnalyzer;
+use crate::core::helpers;
 use crate::core::models::DataBufferInner;
 
 fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {        
@@ -28,7 +29,7 @@ impl DamageAnalyzer {
             .width(ui.available_width())
             .allow_drag(false)
             .allow_zoom(false)
-            .y_axis_formatter(|y, _| Self::format_damage(y.value))
+            .y_axis_formatter(|y, _| helpers::format_damage(y.value))
             .x_axis_formatter(|x, _| {
                 let bars_data = create_bar_data(&data_buffer);
                 if let Some((name, _, _)) = bars_data.get(x.value.floor() as usize) {
@@ -45,7 +46,7 @@ impl DamageAnalyzer {
                     .map(|(pos, (name, value, color_idx))| {
                         Bar::new(pos as f64, *value)
                             .name(name)
-                            .fill(DamageAnalyzer::get_character_color(*color_idx))
+                            .fill(helpers::get_character_color(*color_idx))
                             .width(0.7)
                     })
                     .collect();
