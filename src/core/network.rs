@@ -25,56 +25,54 @@ impl NetworkClient {
     }
 
     // Can we handle this better?
-    pub async fn start_connecting(
+    pub async fn start_connection(
         &mut self,
         payload_tx: &mpsc::Sender<Packet>,
         status_tx: &mpsc::Sender<ConnectionStatus>,
         server_addr: &Arc<Mutex<String>>,
         server_port: &Arc<Mutex<String>>
     ) {
-        loop {
-            let addr = format!(
-                "{}:{}",
-                server_addr.clone().lock().await,
-                server_port.clone().lock().await
-            );
-            // Try connecting
-            match self.connect(&addr).await {
-                Ok(is_connected) => {
-                    if is_connected {
-                        match status_tx
-                        .send(ConnectionStatus::Connected)
-                        .await {
-                            Ok(_) => {},
-                            Err(_) => {},
-                        }
-    
-                        // On success
-                        loop {
-                            let res = self.start_receiving(payload_tx).await;
-                            if res.is_err() {
-                                // TODO: Add warning
-                                match status_tx
-                                    .send(ConnectionStatus::Failed("Disconnected from server".to_string()))
-                                    .await {
-                                        Ok(_) => {},
-                                        Err(_) => {},
-                                    }
-                                self.disconnect().await;
-                                break;
-                            }
+        let addr = format!(
+            "{}:{}",
+            server_addr.clone().lock().await,
+            server_port.clone().lock().await
+        );
+        // Try connecting
+        match self.connect(&addr).await {
+            Ok(is_connected) => {
+                if is_connected {
+                    match status_tx
+                    .send(ConnectionStatus::Connected)
+                    .await {
+                        Ok(_) => {},
+                        Err(_) => {},
+                    }
+
+                    // On success
+                    loop {
+                        let res = self.start_receiving(payload_tx).await;
+                        if res.is_err() {
+                            // TODO: Add warning
+                            match status_tx
+                                .send(ConnectionStatus::Failed("Disconnected from server".to_string()))
+                                .await {
+                                    Ok(_) => {},
+                                    Err(_) => {},
+                                }
+                            self.disconnect().await;
+                            break;
                         }
                     }
-                },
-                Err(e) => {
-                    match status_tx
-                        .send(ConnectionStatus::Failed(e.to_string()))
-                        .await {
-                            Ok(_) => {},
-                            Err(_) => {},
-                        }
-                },
-            }
+                }
+            },
+            Err(e) => {
+                match status_tx
+                    .send(ConnectionStatus::Failed(e.to_string()))
+                    .await {
+                        Ok(_) => {},
+                        Err(_) => {},
+                    }
+            },
         }
     }
 
