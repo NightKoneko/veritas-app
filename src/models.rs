@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Avatar {
@@ -67,9 +67,15 @@ impl DataBuffer {
         }
     }
 
-    pub fn try_lock(&self) -> Option<std::sync::MutexGuard<'_, DataBufferInner>> {
-        self.inner.try_lock().ok()
+    pub async fn lock(&self) -> Result<tokio::sync::MutexGuard<'_, DataBufferInner>, tokio::sync::TryLockError> {
+        Ok(self.inner.lock().await)
     }
+
+
+    pub fn blocking_lock(&self) -> tokio::sync::MutexGuard<'_, DataBufferInner> {
+        self.inner.blocking_lock()
+    }
+
 }
 
 impl DataBufferInner {

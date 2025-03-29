@@ -27,13 +27,13 @@ impl DamageAnalyzer {
                     ui.horizontal(|ui| {
                         ui.label("Server:");
                         let binding = self.server_addr.clone();
-                        let mut server_addr = binding.lock().unwrap();
+                        let mut server_addr = binding.blocking_lock();
                         ui.text_edit_singleline(&mut (*server_addr));
                     });
                     ui.horizontal(|ui| {
                         ui.label("Port:");
                         let binding = self.server_port.clone();
-                        let mut server_port = binding.lock().unwrap();
+                        let mut server_port = binding.blocking_lock();
                         ui.text_edit_singleline(&mut (*server_port));
                     });
                     ui.separator();
