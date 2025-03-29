@@ -64,31 +64,31 @@ impl DamageAnalyzer {
             .show_axes([false; 2])
             .allow_drag(false)
             .allow_zoom(false)
-            .show(ui, |plot_ui| {
-                if let Some(buffer) = self.data_buffer.try_lock() {
-                    let total: f64 = buffer.total_damage.values().sum::<f32>() as f64;
-                    if total > 0.0 {
-                        let segments =
-                            create_pie_segments(&buffer.total_damage, &buffer.column_names);
+            .show(ui, |plot_ui: &mut egui_plot::PlotUi<'_>| {
+                let data_buffer = self.data_buffer.blocking_lock();
 
-                        for (name, segment, i) in segments {
-                            let color = self.get_character_color(i);
-                            let percentage = segment.value / total * 100.0;
+                let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
+                if total > 0.0 {
+                    let segments =
+                        create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);
 
-                            let plot_points = PlotPoints::new(segment.points);
-                            let polygon = Polygon::new(plot_points)
-                                .stroke(Stroke::new(1.5, color))
-                                .name(format!(
-                                    "{}: {:.1}% ({} dmg)",
-                                    name,
-                                    percentage,
-                                    Self::format_damage(segment.value)
-                                ));
+                    for (name, segment, i) in segments {
+                        let color = DamageAnalyzer::get_character_color(i);
+                        let percentage = segment.value / total * 100.0;
 
-                            plot_ui.polygon(polygon);
-                        }
+                        let plot_points = PlotPoints::new(segment.points);
+                        let polygon = Polygon::new(plot_points)
+                            .stroke(Stroke::new(1.5, color))
+                            .name(format!(
+                                "{}: {:.1}% ({} dmg)",
+                                name,
+                                percentage,
+                                Self::format_damage(segment.value)
+                            ));
+
+                        plot_ui.polygon(polygon);
                     }
                 }
-            });
+        });
     }
 }

@@ -5,7 +5,8 @@ use crate::app::DamageAnalyzer;
 impl DamageAnalyzer {
     pub fn show_log_widget(&mut self, ui: &mut Ui) {
         ui.heading("Logs");
-        let text = self.log_messages.join("\n");
+        let message_logger = self.message_logger.blocking_lock();
+        let text = message_logger.get_text();
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
             .max_height(ui.available_height() - 10.0)

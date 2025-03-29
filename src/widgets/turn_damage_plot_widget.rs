@@ -16,31 +16,30 @@ impl DamageAnalyzer {
             .y_axis_label("Damage")
             .y_axis_formatter(|y, _| Self::format_damage(y.value))
             .show(ui, |plot_ui| {
-                if let Some(buffer) = self.data_buffer.try_lock() {
-                    for (i, name) in buffer.column_names.iter().enumerate() {
-                        let color = self.get_character_color(i);
-                        let damage_points: Vec<[f64; 2]> = (0..buffer.turn_damage.len())
-                            .map(|turn_idx| {
-                                let damage = buffer
-                                    .turn_damage
-                                    .get(turn_idx)
-                                    .and_then(|turn| turn.get(name))
-                                    .copied()
-                                    .unwrap_or(0.0);
-                                [turn_idx as f64 + 1.0, damage as f64]
-                            })
-                            .collect();
+                let data_buffer = self.data_buffer.blocking_lock();
+                for (i, name) in data_buffer.column_names.iter().enumerate() {
+                    let color = DamageAnalyzer::get_character_color(i);
+                    let damage_points: Vec<[f64; 2]> = (0..data_buffer.turn_damage.len())
+                        .map(|turn_idx| {
+                            let damage = data_buffer
+                                .turn_damage
+                                .get(turn_idx)
+                                .and_then(|turn| turn.get(name))
+                                .copied()
+                                .unwrap_or(0.0);
+                            [turn_idx as f64 + 1.0, damage as f64]
+                        })
+                        .collect();
 
-                        if !damage_points.is_empty() {
-                            plot_ui.line(
-                                Line::new(PlotPoints::from(damage_points))
-                                    .name(name)
-                                    .color(color)
-                                    .width(2.0),
-                            );
-                        }
+                    if !damage_points.is_empty() {
+                        plot_ui.line(
+                            Line::new(PlotPoints::from(damage_points))
+                                .name(name)
+                                .color(color)
+                                .width(2.0),
+                        );
                     }
                 }
-            });
+        });
     }
 }

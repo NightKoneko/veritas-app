@@ -3,7 +3,8 @@ mod models;
 mod network;
 pub mod panels;
 pub mod widgets;
-pub mod core;
+pub mod message_logger;
+pub mod packet_handler;
 
 use eframe::egui;
 
