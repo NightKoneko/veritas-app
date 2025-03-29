@@ -3,7 +3,9 @@ use std::{fs::{self, File}, sync::Arc};
 use csv::Writer;
 use tokio::sync::{mpsc, Mutex, MutexGuard};
 
-use crate::{message_logger::MessageLogger, models::{DamageData, DataBuffer, KillData, Packet, SetupData, TurnData}};
+use crate::{core::message_logger::MessageLogger, core::models::{DamageData, DataBuffer, KillData, Packet, SetupData, TurnData}};
+
+use super::models::DataBufferInner;
 
 pub struct PacketHandler {
     message_logger: Arc<Mutex<MessageLogger>>,
@@ -36,7 +38,7 @@ impl PacketHandler {
                     "TurnEnd" => self.handle_turn_end(&packet.data, message_logger_lock, data_buffer_lock),
                     "OnKill" => self.handle_kill(&packet.data, message_logger_lock, data_buffer_lock),
                     "BattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
-                    _ => message_logger_lock.log_message(&format!("Unknown packet type: {}", packet.r#type)),
+                    _ => message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type)),
                 }    
             },
             Err(_) => {},
@@ -47,18 +49,18 @@ impl PacketHandler {
         &mut self,
         data: &serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
             for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
                 if damage > 0.0 {
-                    message_logger.log_message(&format!(
+                    message_logger.log(&format!(
                         "Turn summary - {}: {} damage",
                         avatar.name, damage
                     ));
                 }
             }
-            message_logger.log_message(&format!("Total turn damage: {}", turn_data.total_damage));
+            message_logger.log(&format!("Total turn damage: {}", turn_data.total_damage));
 
             let turn_total: f32 = turn_data.total_damage;
             let current_av = (*data_buffer).current_av;
@@ -79,13 +81,13 @@ impl PacketHandler {
         &mut self,
         data: &serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(lineup_data) = serde_json::from_value::<SetupData>(data.clone()) {
             let names: Vec<String> = lineup_data.avatars.iter().map(|a| a.name.clone()).collect();
             
             fs::create_dir_all("damage_logs").unwrap_or_else(|e| {
-                message_logger.log_message(&format!("Failed to create damage_logs directory: {}", e));
+                message_logger.log(&format!("Failed to create damage_logs directory: {}", e));
             });
     
             let filename = format!("HSR_{}.csv", chrono::Local::now().format("%Y%m%d_%H%M%S"));
@@ -98,18 +100,18 @@ impl PacketHandler {
                     
                     if let Some(writer) = &mut self.csv_writer {
                         if let Err(e) = writer.write_record(&names) {
-                            message_logger.log_message(&format!("Failed to write CSV headers: {}", e));
+                            message_logger.log(&format!("Failed to write CSV headers: {}", e));
                         }
                     }
 
                     data_buffer.init_characters(&names);
                     data_buffer.rows.clear();
 
-                    message_logger.log_message(&format!("Created CSV: {}", filename));
-                    message_logger.log_message(&format!("Headers: {:?}", names));
+                    message_logger.log(&format!("Created CSV: {}", filename));
+                    message_logger.log(&format!("Headers: {:?}", names));
                 }
                 Err(e) => {
-                    message_logger.log_message(&format!("Failed to create CSV file: {}", e));
+                    message_logger.log(&format!("Failed to create CSV file: {}", e));
                 }
             }
         }
@@ -118,23 +120,23 @@ impl PacketHandler {
     fn handle_battle_begin(&mut self,
         _data: &serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut _data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        message_logger.log_message("Battle started");
+        message_logger.log("Battle started");
     }
     
     fn handle_damage(
         &mut self,
         data: &serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(damage_data) = serde_json::from_value::<DamageData>(data.clone()) {
         let attacker = damage_data.attacker.name.clone();
         let damage = damage_data.damage;
         
         if damage > 0.0 {
-            message_logger.log_message(&format!("{} dealt {} damage", attacker, damage));
+            message_logger.log(&format!("{} dealt {} damage", attacker, damage));
         }
         
         let mut should_write = false;
@@ -161,17 +163,17 @@ impl PacketHandler {
         &mut self,
         data: &serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut _data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(kill_data) = serde_json::from_value::<KillData>(data.clone()) {
-            message_logger.log_message(&format!("{} has killed", kill_data.attacker.name));
+            message_logger.log(&format!("{} has killed", kill_data.attacker.name));
         }
     }
     
     fn handle_battle_end(
         &mut self,
         mut message_logger: MutexGuard<'_, MessageLogger>,
-        mut data_buffer: MutexGuard<'_, crate::models::DataBufferInner>
+        mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         let final_turn_data = if !data_buffer.current_turn.is_empty() {
             let total_damage: f32 = data_buffer.current_turn.values().sum();
@@ -189,16 +191,16 @@ impl PacketHandler {
         if let Some((final_turn, total_damage)) = final_turn_data {
             for (name, damage) in final_turn {
                 if damage > 0.0 {
-                    message_logger.log_message(&format!(
+                    message_logger.log(&format!(
                         "Final turn summary - {}: {} damage",
                         name, damage
                     ));
                 }
             }
-            message_logger.log_message(&format!("Final turn total damage: {}", total_damage));
+            message_logger.log(&format!("Final turn total damage: {}", total_damage));
         }
     
         self.csv_writer = None;
-        message_logger.log_message("Battle ended - CSV file closed");
+        message_logger.log("Battle ended - CSV file closed");
     }
 }

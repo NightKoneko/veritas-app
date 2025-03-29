@@ -1,5 +1,5 @@
-pub mod av_panel;
-pub mod menubar_panel;
-pub mod central_panel;
-pub mod statusbar_panel;
-pub mod sidebar_panel;
+mod av_panel;
+mod central_panel;
+mod menubar_panel;
+mod sidebar_panel;
+mod statusbar_panel;

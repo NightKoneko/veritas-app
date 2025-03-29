@@ -8,18 +8,18 @@ impl DamageAnalyzer {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Connection Settings...").clicked() {
-                        self.show_connection_settings = true;
+                        self.state.show_connection_settings = true;
                         ui.close_menu();
                     }
                     if ui.button("Preferences...").clicked() {
-                        self.show_preferences = true;
+                        self.state.show_preferences = true;
                         ui.close_menu();
                     }
                 });
             });
         });
 
-        if self.show_connection_settings {
+        if self.state.show_connection_settings {
             egui::Window::new("Connection Settings")
                 .collapsible(false)
                 .resizable(false)
@@ -39,22 +39,22 @@ impl DamageAnalyzer {
                     ui.separator();
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
-                            self.show_connection_settings = false;
+                            self.state.show_connection_settings = false;
                         }
                     });
                 });
         }
 
-        if self.show_preferences {
+        if self.state.show_preferences {
             egui::Window::new("Preferences")
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Theme:");
-                        let mut selected_theme = self.theme;
+                        let mut selected_theme = self.state.theme;
                         ComboBox::from_id_salt("theme_selector")
-                            .selected_text(self.theme.name())
+                            .selected_text(self.state.theme.name())
                             .show_ui(ui, |ui| {
                                 for &theme in Theme::ALL {
                                     let text = theme.name();
@@ -70,7 +70,7 @@ impl DamageAnalyzer {
 
                     ui.separator();
                     if ui.button("Close").clicked() {
-                        self.show_preferences = false;
+                        self.state.show_preferences = false;
                     }
                 });
         }
