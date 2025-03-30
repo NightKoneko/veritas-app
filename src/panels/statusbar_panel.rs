@@ -1,4 +1,5 @@
-use eframe::egui;
+use eframe::{egui::{self, Align, Button, Color32, CornerRadius, Label, Shadow, Vec2}, Frame};
+use egui_material_icons::icons::ICON_WIFI;
 
 use crate::app::DamageAnalyzer;
 
@@ -14,15 +15,27 @@ impl DamageAnalyzer {
     }
 
     pub fn show_statusbar_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // System Color Statusbar
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal_centered(|ui| {
+            ui.horizontal(|ui| {
+                ui.style_mut().interaction.selectable_labels = false;
+
                 let binding = self.connected.clone();
                 let connected = binding.blocking_lock();
-                ui.label(if *connected {
-                    egui::RichText::new("Connected").color(egui::Color32::GREEN)
+
+                if *connected {
+                    ui.add(Label::new(egui_material_icons::icon_text(ICON_WIFI).color(egui::Color32::from_rgb(0, 180, 0))));
                 } else {
-                    // TODO: Make this not look terrible on light mode
-                    egui::RichText::new("Connecting...").color(egui::Color32::YELLOW)
+                    ui.add(Label::new(egui_material_icons::icon_text(ICON_WIFI).color(egui::Color32::from_rgb(255, 180, 0))));
+                }
+
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::BOTTOM), |ui| {
+                    ui.label(if *connected {
+                        egui::RichText::new("Connected").color(egui::Color32::from_rgb(0, 180, 0))
+                    } else {
+                        // TODO: Make this not look terrible on light mode
+                        egui::RichText::new("Connecting...").color(egui::Color32::from_rgb(255, 180, 0))
+                    });
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

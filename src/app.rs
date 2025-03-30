@@ -55,7 +55,7 @@ pub struct DamageAnalyzer {
 
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(Theme::Light.visuals());
+        cc.egui_ctx.set_visuals(cc.egui_ctx.theme().default_visuals());
         egui_material_icons::initialize(&cc.egui_ctx);
 
         let message_logger = Arc::new(
