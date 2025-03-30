@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
-use eframe::egui::{self};
+use eframe::egui::{self, Theme};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
@@ -10,32 +10,7 @@ use crate::core::packet_handler::PacketHandler;
 use crate::core::models::*;
 use crate::core::network::{ConnectionStatus, NetworkClient};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Theme {
-    Dark,
-    Light
-}
-
-impl Theme {
-    pub fn name(&self) -> &'static str {
-        match self {
-            Theme::Dark => "Dark",
-            Theme::Light => "Light",
-        }
-    }
-
-    pub fn visuals(&self) -> egui::Visuals {
-        match self {
-            Theme::Dark => egui::Visuals::dark(),
-            Theme::Light => egui::Visuals::light(),
-        }
-    }
-
-    pub const ALL: &'static [Theme] = &[Theme::Dark, Theme::Light];
-}
-
 pub struct AppState {
-    pub theme: Theme,
     pub is_sidebar_expanded: bool,
     pub is_window_pinned: bool,
     pub show_connection_settings: bool,
@@ -55,7 +30,6 @@ pub struct DamageAnalyzer {
 
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx.set_visuals(cc.egui_ctx.theme().default_visuals());
         egui_material_icons::initialize(&cc.egui_ctx);
 
         let message_logger = Arc::new(
@@ -78,7 +52,6 @@ impl DamageAnalyzer {
             message_logger,
             packet_handler,
             state: AppState { 
-                theme: Theme::Light,
                 is_sidebar_expanded: false,
                 is_window_pinned: false,
                 show_connection_settings: false, 
@@ -162,12 +135,6 @@ impl DamageAnalyzer {
             }
         });    
     }
-
-    pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
-        self.state.theme = theme;
-        ctx.set_visuals(theme.visuals());
-    }
-
 }
 
 impl eframe::App for DamageAnalyzer {
