@@ -12,7 +12,7 @@ pub struct PacketHandler {
     data_buffer: Arc<DataBuffer>,
     csv_writer: Option<Writer<File>>,
     // Seems unnecessary atm
-    current_file: String
+    current_file: String,
 }
 
 impl PacketHandler {
@@ -21,15 +21,17 @@ impl PacketHandler {
             message_logger,
             data_buffer,
             csv_writer: None,
-            current_file: String::new()
+            current_file: String::new(),
         }
     }
 
-    pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) {
+
+    pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) -> bool {
         let messager_logger_clone = self.message_logger.clone();
         let mut message_logger_lock = messager_logger_clone.lock().await;
         let data_buffer_clone = self.data_buffer.clone();
         let data_buffer_lock = data_buffer_clone.lock().await.unwrap();
+        let mut is_new_update = true;
         match payload_rx.try_recv() {
             Ok(packet) => {
                 match packet.r#type.as_str() {
@@ -39,11 +41,17 @@ impl PacketHandler {
                     "TurnEnd" => self.handle_turn_end(&packet.data, message_logger_lock, data_buffer_lock),
                     "OnKill" => self.handle_kill(&packet.data, message_logger_lock, data_buffer_lock),
                     "BattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
-                    _ => message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type)),
+                    _ => {
+                        is_new_update = false;
+                        message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type));
+                    },
                 }    
             },
-            Err(_) => {},
+            Err(_) => {
+                is_new_update = false;
+            },
         }
+        is_new_update
     }
     
     fn handle_turn_end(

@@ -5,8 +5,8 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::sleep;
-use crate::core::message_logger::{self, MessageLogger};
-use crate::core::packet_handler::{self, PacketHandler};
+use crate::core::message_logger::MessageLogger;
+use crate::core::packet_handler::PacketHandler;
 use crate::core::models::*;
 use crate::core::network::{ConnectionStatus, NetworkClient};
 
@@ -50,6 +50,7 @@ pub struct DamageAnalyzer {
     pub message_logger: Arc<Mutex<MessageLogger>>,
     pub packet_handler: Arc<Mutex<PacketHandler>>,
     pub state: AppState,
+    pub is_frame_stale: Arc<Mutex<bool>>, 
     pub runtime: Runtime
 }
 
@@ -84,9 +85,9 @@ impl DamageAnalyzer {
                 show_connection_settings: false, 
                 show_preferences: false
             },
+            is_frame_stale: Mutex::new(false).into(),
             runtime: Runtime::new().unwrap()
         };
-
 
         // Enter the runtime so that `tokio::spawn` is available immediately.
         let _enter = app.runtime.enter();
@@ -107,11 +108,12 @@ impl DamageAnalyzer {
 
     fn start_logger_worker(&self, mut payload_rx: mpsc::Receiver<Packet>) {
         let packet_handler = self.packet_handler.clone();
-
+        let is_frame_stale = self.is_frame_stale.clone();
         self.runtime.spawn(async move {
             loop {
                 let mut packet_handler = packet_handler.lock().await;
-                packet_handler.handle_packets(&mut payload_rx).await;
+                let mut is_frame_stale_lock = is_frame_stale.lock().await;
+                *is_frame_stale_lock = packet_handler.handle_packets(&mut payload_rx).await;
                 drop(packet_handler);
                 sleep(Duration::from_millis(10)).await;
             }
@@ -132,37 +134,37 @@ impl DamageAnalyzer {
     }
 
     fn start_connection_status_worker(&self, mut status_rx: Receiver<ConnectionStatus>) {
-            // This is kinda useless bc we don't know when the connection has been severed
-            // For it to try to reconnect again
-            let server_addr = self.server_addr.clone();
-            let server_port = self.server_port.clone();
-            
-            let connected = self.connected.clone();
-            let message_logger = self.message_logger.clone();
+        // This is kinda useless bc we don't know when the connection has been severed
+        // For it to try to reconnect again
+        let server_addr = self.server_addr.clone();
+        let server_port = self.server_port.clone();
+        
+        let connected = self.connected.clone();
+        let message_logger = self.message_logger.clone();
 
-            self.runtime.spawn(async move {
-                loop {
-                    let mut connected_lock = connected.lock().await;
-                    if !*connected_lock {
-                        if let Some(status) = status_rx.try_recv().ok() {
-                            let mut message_logger_lock = message_logger.lock().await;
-                            match status {
-                                ConnectionStatus::Connected => {
-                                    *connected_lock = true;
-                                    let addr = format!("{}:{}", server_addr.lock().await, server_port.lock().await);
-                                    message_logger_lock.log(&format!("Connected to {}", addr));
-                                }
-                                ConnectionStatus::Failed(err) => {
-                                    *connected_lock = false;
-                                    message_logger_lock.log(&format!("Failed to connect: {}", err));
-                                }
+        self.runtime.spawn(async move {
+            loop {
+                let mut connected_lock = connected.lock().await;
+                if !*connected_lock {
+                    if let Some(status) = status_rx.try_recv().ok() {
+                        let mut message_logger_lock = message_logger.lock().await;
+                        match status {
+                            ConnectionStatus::Connected => {
+                                *connected_lock = true;
+                                let addr = format!("{}:{}", server_addr.lock().await, server_port.lock().await);
+                                message_logger_lock.log(&format!("Connected to {}", addr));
+                            }
+                            ConnectionStatus::Failed(err) => {
+                                *connected_lock = false;
+                                message_logger_lock.log(&format!("Failed to connect: {}", err));
                             }
                         }
                     }
-                    drop(connected_lock);
-                    sleep(Duration::from_secs(2)).await;
                 }
-            });    
+                drop(connected_lock);
+                sleep(Duration::from_secs(2)).await;
+            }
+        });    
     }
 
     pub fn set_theme(&mut self, theme: Theme, ctx: &egui::Context) {
@@ -182,6 +184,8 @@ impl eframe::App for DamageAnalyzer {
 
         self.show_central_panel(ctx, _frame);
 
-        ctx.request_repaint_after(Duration::from_millis(100));
+        if *self.is_frame_stale.blocking_lock() {
+            ctx.request_repaint();
+        }
     }
 }
