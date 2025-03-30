@@ -50,7 +50,6 @@ pub struct DamageAnalyzer {
     pub message_logger: Arc<Mutex<MessageLogger>>,
     pub packet_handler: Arc<Mutex<PacketHandler>>,
     pub state: AppState,
-    pub is_frame_stale: Arc<Mutex<bool>>, 
     pub runtime: Runtime
 }
 
@@ -85,7 +84,6 @@ impl DamageAnalyzer {
                 show_connection_settings: false, 
                 show_preferences: false
             },
-            is_frame_stale: Mutex::new(false).into(),
             runtime: Runtime::new().unwrap()
         };
 
@@ -108,12 +106,10 @@ impl DamageAnalyzer {
 
     fn start_logger_worker(&self, mut payload_rx: mpsc::Receiver<Packet>) {
         let packet_handler = self.packet_handler.clone();
-        let is_frame_stale = self.is_frame_stale.clone();
         self.runtime.spawn(async move {
             loop {
                 let mut packet_handler = packet_handler.lock().await;
-                let mut is_frame_stale_lock = is_frame_stale.lock().await;
-                *is_frame_stale_lock = packet_handler.handle_packets(&mut payload_rx).await;
+                packet_handler.handle_packets(&mut payload_rx).await;
                 drop(packet_handler);
                 sleep(Duration::from_millis(10)).await;
             }
@@ -184,8 +180,6 @@ impl eframe::App for DamageAnalyzer {
 
         self.show_central_panel(ctx, _frame);
 
-        if *self.is_frame_stale.blocking_lock() {
-            ctx.request_repaint();
-        }
+        ctx.request_repaint_after(Duration::from_millis(50));
     }
 }

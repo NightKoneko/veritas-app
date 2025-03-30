@@ -1,6 +1,6 @@
 use eframe::egui::{self, ComboBox};
 
-use crate::app::{DamageAnalyzer, Theme};
+use crate::{app::{DamageAnalyzer, Theme}, core::inject::hijack_process};
 
 impl DamageAnalyzer {
     pub fn show_menubar_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -14,6 +14,11 @@ impl DamageAnalyzer {
                     if ui.button("Preferences...").clicked() {
                         self.state.show_preferences = true;
                         ui.close_menu();
+                    }
+                });
+                ui.menu_button("Tools", |ui| {
+                    if ui.button("Spawn Server").clicked() {
+                        hijack_process("StarRail", "veritas.dll");
                     }
                 });
             });
