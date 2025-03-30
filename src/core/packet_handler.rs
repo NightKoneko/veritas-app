@@ -3,7 +3,7 @@ use std::{fs::{self, File}, sync::Arc};
 use csv::Writer;
 use tokio::sync::{mpsc, Mutex, MutexGuard};
 
-use crate::{core::message_logger::MessageLogger, core::models::{DamageData, DataBuffer, KillData, Packet, SetupData, TurnData}};
+use crate::{core::message_logger::MessageLogger, core::models::{DamageData, DataBuffer, KillData, Packet, SetupData, TurnData, TurnBeginData}};
 
 use super::models::DataBufferInner;
 
@@ -35,6 +35,7 @@ impl PacketHandler {
                 match packet.r#type.as_str() {
                     "SetBattleLineup" => self.handle_lineup(&packet.data, message_logger_lock, data_buffer_lock),
                     "BattleBegin" => self.handle_battle_begin(&packet.data, message_logger_lock, data_buffer_lock),
+                    "TurnBegin" => self.handle_turn_begin(&packet.data, message_logger_lock, data_buffer_lock),
                     "OnDamage" => self.handle_damage(&packet.data, message_logger_lock, data_buffer_lock),
                     "TurnEnd" => self.handle_turn_end(&packet.data, message_logger_lock, data_buffer_lock),
                     "OnKill" => self.handle_kill(&packet.data, message_logger_lock, data_buffer_lock),
@@ -43,6 +44,18 @@ impl PacketHandler {
                 }    
             },
             Err(_) => {},
+        }
+    }
+
+    fn handle_turn_begin(
+        &mut self,
+        data: &serde_json::Value,
+        mut message_logger: MutexGuard<'_, MessageLogger>,
+        mut data_buffer: MutexGuard<'_, DataBufferInner>
+    ) {
+        if let Ok(turn_data) = serde_json::from_value::<TurnBeginData>(data.clone()) {
+            data_buffer.current_av = turn_data.action_value;
+            message_logger.log(&format!("Turn begin - AV: {:.2}", turn_data.action_value));
         }
     }
     

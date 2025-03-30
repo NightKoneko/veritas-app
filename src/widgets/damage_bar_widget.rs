@@ -6,17 +6,13 @@ use crate::core::helpers;
 use crate::core::models::DataBufferInner;
 
 fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {        
-    let mut data: Vec<_> = buffer.column_names.iter()
+    buffer.column_names.iter()
         .enumerate()
         .filter_map(|(i, name)| {
             buffer.total_damage.get(name)
                 .map(|&damage| (name.clone(), damage as f64, i))
         })
-        .collect();
-    
-    
-    data.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    data
+        .collect()
 }
 
 impl DamageAnalyzer {
