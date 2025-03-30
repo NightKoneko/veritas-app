@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 use tokio::{io::AsyncReadExt, sync::Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Error, Result};
 use crate::core::models::Packet;
 
 
@@ -27,51 +29,26 @@ impl NetworkClient {
     // Can we handle this better?
     pub async fn start_connection(
         &mut self,
-        payload_tx: &mpsc::Sender<Packet>,
         status_tx: &mpsc::Sender<ConnectionStatus>,
         server_addr: &Arc<Mutex<String>>,
         server_port: &Arc<Mutex<String>>
-    ) {
+    ) -> bool {
         let addr = format!(
             "{}:{}",
-            server_addr.clone().lock().await,
-            server_port.clone().lock().await
+            server_addr.lock().await,
+            server_port.lock().await
         );
         // Try connecting
         match self.connect(&addr).await {
             Ok(is_connected) => {
                 if is_connected {
-                    match status_tx
-                    .send(ConnectionStatus::Connected)
-                    .await {
-                        Ok(_) => {},
-                        Err(_) => {},
-                    }
-
-                    // On success
-                    loop {
-                        let res = self.start_receiving(payload_tx).await;
-                        if res.is_err() {
-                            // TODO: Add warning
-                            match status_tx
-                                .send(ConnectionStatus::Failed("Disconnected from server".to_string()))
-                                .await {
-                                    Ok(_) => {},
-                                    Err(_) => {},
-                                }
-                            self.disconnect().await;
-                            break;
-                        }
-                    }
+                    status_tx.send(ConnectionStatus::Connected).await.unwrap();
                 }
+                return true;
             },
             Err(e) => {
-                match status_tx
-                    .send(ConnectionStatus::Failed(e.to_string()))
-                    .await {
-                        Ok(_) => {},
-                        Err(_) => {},
-                    }
+                status_tx.send(ConnectionStatus::Failed(e.to_string())).await.unwrap();
+                return false;
             },
         }
     }
@@ -96,23 +73,36 @@ impl NetworkClient {
         *stream_lock = None;
     }
 
-    pub async fn start_receiving(&mut self, tx: &mpsc::Sender<Packet>) -> std::result::Result<(), tokio::io::Error> {    
+    pub async fn start_receiving(&mut self, tx: &mpsc::Sender<Packet>) -> Result<()>{    
         let mut stream_lock = self.stream.lock().await;
-        let stream = stream_lock.as_mut().ok_or_else(|| anyhow!("Not connected")).unwrap();
+        let stream = stream_lock.as_mut().ok_or_else(|| anyhow!("Not connected"))?;
         
         let mut size_buf = [0u8; 4];
-        stream.read(&mut size_buf).await?;
+        stream.read_exact(&mut size_buf).await?;
 
         let size = u32::from_ne_bytes(size_buf) as usize;
-        
-        let mut packet_buf = vec![0u8; size];
-        stream.read(&mut packet_buf).await?;
 
-        if let Ok(packet_str) = String::from_utf8(packet_buf) {
-            if let Ok(packet) = serde_json::from_str(&packet_str) {
-                tx.send(packet).await.unwrap();
-            }
+        let mut packet_buf = vec![0u8; size];
+        stream.read_exact(&mut packet_buf).await?;
+
+        let packet = serde_json::from_slice::<Packet>(&packet_buf)?;
+        if packet.r#type != "Heartbeat" {
+            tx.send(packet).await?;
         }
         Ok(())
+    }
+
+    // Should ping again?
+    pub async fn try_pinging(self: &mut NetworkClient, retries: &mut usize, max_retries: usize, timeout_duration: &mut Duration, initial_timeout: &Duration) -> bool {
+        *retries += 1;
+        println!("Retries: {}", retries);
+        if *retries > max_retries {
+            println!("Disconnected: {}", retries);
+            self.disconnect().await;
+            return false;
+        }
+        thread::sleep(*timeout_duration);
+        *timeout_duration = *initial_timeout * 2u32.pow(*retries as u32);
+        return true;
     }
 }
