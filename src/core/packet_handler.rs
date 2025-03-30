@@ -26,11 +26,12 @@ impl PacketHandler {
     }
 
 
-    pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) {
+    pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) -> bool {
         let messager_logger_clone = self.message_logger.clone();
         let mut message_logger_lock = messager_logger_clone.lock().await;
         let data_buffer_clone = self.data_buffer.clone();
         let data_buffer_lock = data_buffer_clone.lock().await.unwrap();
+        let mut is_there_update = true;
         match payload_rx.try_recv() {
             Ok(packet) => {
                 match packet.r#type.as_str() {
@@ -40,11 +41,15 @@ impl PacketHandler {
                     "TurnEnd" => self.handle_turn_end(&packet.data, message_logger_lock, data_buffer_lock),
                     "OnKill" => self.handle_kill(&packet.data, message_logger_lock, data_buffer_lock),
                     "BattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
-                    _ => message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type)),
+                    _ => {
+                        is_there_update = false;
+                        message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type))
+                    },
                 }    
             },
-            Err(_) => {},
+            Err(_) => is_there_update = false,
         }
+        is_there_update
     }
     
     fn handle_turn_end(
