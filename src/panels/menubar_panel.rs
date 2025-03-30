@@ -1,6 +1,6 @@
-use eframe::egui::{self, ComboBox};
+use eframe::egui::{self, ThemePreference};
 
-use crate::{app::{DamageAnalyzer, Theme}, core::inject::hijack_process};
+use crate::{app::DamageAnalyzer, core::inject::hijack_process};
 
 impl DamageAnalyzer {
     pub fn show_menubar_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -57,21 +57,10 @@ impl DamageAnalyzer {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("Theme:");
-                        let mut selected_theme = self.state.theme;
-                        ComboBox::from_id_salt("theme_selector")
-                            .selected_text(self.state.theme.name())
-                            .show_ui(ui, |ui| {
-                                for &theme in Theme::ALL {
-                                    let text = theme.name();
-                                    if ui
-                                        .selectable_value(&mut selected_theme, theme, text)
-                                        .clicked()
-                                    {
-                                        self.set_theme(theme, ctx);
-                                    }
-                                }
-                            });
-                    });
+                        let mut pref = ThemePreference::from(ctx.theme());
+                        pref.radio_buttons(ui);
+                        ctx.set_theme(pref);
+            });
 
                     ui.separator();
                     if ui.button("Close").clicked() {
