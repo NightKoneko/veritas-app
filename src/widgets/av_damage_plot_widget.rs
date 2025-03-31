@@ -14,35 +14,32 @@ impl DamageAnalyzer {
             .y_axis_label("Damage")
             .y_axis_formatter(|y, _| helpers::format_damage(y.value))
             .show(ui, |plot_ui| {
-                if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                    for (i, name) in data_buffer.column_names.iter().enumerate() {
-                        let color = helpers::get_character_color(i);
-                        let av_history = &data_buffer.av_history;
+                let data_buffer = self.data_buffer.blocking_lock().clone();
+                for (i, name) in data_buffer.column_names.iter().enumerate() {
+                    let color = helpers::get_character_color(i);
 
-                        let av_damages = data_buffer.av_damage
-                            .iter()
-                            .map(|dmg_map| dmg_map.get(name).unwrap())
-                            .copied()
-                            .collect::<Vec<f32>>();
+                    let av_damages = data_buffer.av_damage
+                        .iter()
+                        .map(|dmg_map| dmg_map.get(name).unwrap())
+                        .copied()
+                        .collect::<Vec<f32>>();
 
-                        let points = av_history
-                            .iter()
-                            .zip(av_damages.iter())
-                            .map(|(x, y)| [*x as f64, *y as f64])
-                            .collect::<Vec<[f64; 2]>>();
+                    let points = data_buffer.av_history
+                        .iter()
+                        .zip(av_damages.iter())
+                        .map(|(x, y)| [*x as f64, *y as f64])
+                        .collect::<Vec<[f64; 2]>>();
 
-                        plot_ui.line(
-                            Line::new(PlotPoints::new(points))
-                                .name(name)
-                                .color(color)
-                                .width(2.0),
-                        );
-                    }
-                    if let Ok(is_there_update) = self.is_there_update.try_lock() {
-                        if *is_there_update {
-                            plot_ui.set_auto_bounds([true, true]);
-                        }
-                    }
+                    plot_ui.line(
+                        Line::new(PlotPoints::new(points))
+                            .name(name)
+                            .color(color)
+                            .width(2.0),
+                    );
+                }
+                let is_there_update = self.is_there_update.blocking_lock().clone();
+                if is_there_update {
+                    plot_ui.set_auto_bounds([true, true]);
                 }
             });
     }

@@ -8,6 +8,7 @@ use crate::{app::DamageAnalyzer, core::{helpers, models::DataBufferInner}};
 
 impl DamageAnalyzer {
     pub fn show_av_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let data_buffer = self.data_buffer.blocking_lock().clone();
         egui::SidePanel::right("av_panel")
         .resizable(true)
         .default_width(250.0)
@@ -22,24 +23,17 @@ impl DamageAnalyzer {
             ui.horizontal(|ui| {
                 
                 ui.label("AV:");
-                if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                    ui.label(format!("{:.2}", data_buffer.current_av));
-                }
-        
+                ui.label(format!("{:.2}", data_buffer.current_av));
             });
             ui.horizontal(|ui| {
                 ui.label("Total Damage:");
-                if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                    ui.label(helpers::format_damage(
-                        data_buffer.total_damage.values().sum::<f32>() as f64
-                    ));
-                }
+                ui.label(helpers::format_damage(
+                    data_buffer.total_damage.values().sum::<f32>() as f64
+                ));
             });
             ui.horizontal(|ui| {
                 ui.label("Total DpAV:");
-                if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                    ui.label(format!("{:.2}", data_buffer.total_dpav));
-                }
+                ui.label(format!("{:.2}", data_buffer.total_dpav));
             });
 
             ui.separator();
@@ -53,22 +47,17 @@ impl DamageAnalyzer {
                 .y_axis_label("DpAV")
                 .y_axis_formatter(|y, _| format!("{:.1}", y.value))
                 .show(ui, |plot_ui| {
-                    if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                        if !data_buffer.dpav_history.is_empty() {
-                            let points: Vec<[f64; 2]> = data_buffer
-                                .dpav_history
-                                .iter()
-                                .enumerate()
-                                .map(|(i, &dpav)| [i as f64 + 1.0, dpav as f64])
-                                .collect();
-
-                            plot_ui.line(
-                                Line::new(PlotPoints::from(points))
-                                    .name("DpAV")
-                                    .width(2.0),
-                            );
-                        }
-                    }
+                        let points: Vec<[f64; 2]> = data_buffer
+                            .dpav_history
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &dpav)| [i as f64 + 1.0, dpav as f64])
+                            .collect();
+                        plot_ui.line(
+                            Line::new(PlotPoints::from(points))
+                                .name("DpAV")
+                                .width(2.0),
+                        );
                 });
         });
     }

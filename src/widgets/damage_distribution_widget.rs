@@ -54,6 +54,7 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
 
 impl DamageAnalyzer {
     pub fn show_damage_distribution_widget(&mut self, ui: &mut Ui) {
+        let data_buffer = self.data_buffer.blocking_lock().clone();
         Plot::new("damage_pie")
             .legend(Legend::default().position(egui_plot::Corner::RightTop))
             .height(300.0)
@@ -67,28 +68,25 @@ impl DamageAnalyzer {
             .allow_zoom(false)
             .allow_scroll(false)
             .show(ui, |plot_ui: &mut egui_plot::PlotUi<'_>| {
-                if let Ok(data_buffer) = self.data_buffer.try_lock() {
-                    let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
-                    if total > 0.0 {
-                        let segments =
-                            create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);
+                let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
+                if total > 0.0 {
+                    let segments =
+                        create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);
+                    for (name, segment, i) in segments {
+                        let color = helpers::get_character_color(i);
+                        let percentage = segment.value / total * 100.0;
 
-                        for (name, segment, i) in segments {
-                            let color = helpers::get_character_color(i);
-                            let percentage = segment.value / total * 100.0;
+                        let plot_points = PlotPoints::new(segment.points);
+                        let polygon = Polygon::new(plot_points)
+                            .stroke(Stroke::new(1.5, color))
+                            .name(format!(
+                                "{}: {:.1}% ({} dmg)",
+                                name,
+                                percentage,
+                                helpers::format_damage(segment.value)
+                            ));
 
-                            let plot_points = PlotPoints::new(segment.points);
-                            let polygon = Polygon::new(plot_points)
-                                .stroke(Stroke::new(1.5, color))
-                                .name(format!(
-                                    "{}: {:.1}% ({} dmg)",
-                                    name,
-                                    percentage,
-                                    helpers::format_damage(segment.value)
-                                ));
-
-                            plot_ui.polygon(polygon);
-                        }
+                        plot_ui.polygon(polygon);
                     }
                 }
         });
