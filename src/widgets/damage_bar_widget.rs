@@ -17,7 +17,6 @@ fn create_bar_data(buffer: &DataBufferInner) -> Vec<(String, f64, usize)> {
 
 impl DamageAnalyzer {
     pub fn show_damage_bar_widget(&mut self, ui: &mut Ui) {
-        let data_buffer = self.data_buffer.blocking_lock();
 
         Plot::new("damage_bars")
             .legend(Legend::default())
@@ -28,28 +27,33 @@ impl DamageAnalyzer {
             .allow_scroll(false)
             .y_axis_formatter(|y, _| helpers::format_damage(y.value))
             .x_axis_formatter(|x, _| {
-                let bars_data = create_bar_data(&data_buffer);
-                if let Some((name, _, _)) = bars_data.get(x.value.floor() as usize) {
-                    return name.clone();
+                if let Ok(data_buffer) = self.data_buffer.try_lock() {
+                    let bars_data = create_bar_data(&data_buffer);
+                    if let Some((name, _, _)) = bars_data.get(x.value.floor() as usize) {
+                        return name.clone();
+                    }
                 }
                 String::new()
             })
             .show(ui, |plot_ui| {
-                let bars_data = create_bar_data(&data_buffer);
+                if let Ok(data_buffer) = self.data_buffer.try_lock() {
 
-                let bars: Vec<Bar> = bars_data
-                    .iter()
-                    .enumerate()
-                    .map(|(pos, (name, value, color_idx))| {
-                        Bar::new(pos as f64, *value)
-                            .name(name)
-                            .fill(helpers::get_character_color(*color_idx))
-                            .width(0.7)
-                    })
-                    .collect();
+                    let bars_data = create_bar_data(&data_buffer);
 
-                let chart = BarChart::new(bars);
-                plot_ui.bar_chart(chart);
+                    let bars: Vec<Bar> = bars_data
+                        .iter()
+                        .enumerate()
+                        .map(|(pos, (name, value, color_idx))| {
+                            Bar::new(pos as f64, *value)
+                                .name(name)
+                                .fill(helpers::get_character_color(*color_idx))
+                                .width(0.7)
+                        })
+                        .collect();
+
+                    let chart = BarChart::new(bars);
+                    plot_ui.bar_chart(chart);
+                }
         });
     }
 }
