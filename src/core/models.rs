@@ -52,6 +52,7 @@ pub struct DataBufferInner {
     pub rows: Vec<Vec<f32>>,
     pub column_names: Vec<String>,
     pub total_damage: HashMap<String, f32>,
+    pub av_damage: Vec<HashMap<String, f32>>,
     pub turn_damage: Vec<HashMap<String, f32>>,
     pub current_turn: HashMap<String, f32>,
     pub current_av: f32,
@@ -69,6 +70,10 @@ impl DataBuffer {
 
     pub async fn lock(&self) -> Result<tokio::sync::MutexGuard<'_, DataBufferInner>, tokio::sync::TryLockError> {
         Ok(self.inner.lock().await)
+    }
+
+    pub fn try_lock(&self) -> Result<tokio::sync::MutexGuard<'_, DataBufferInner>, tokio::sync::TryLockError> {
+        self.inner.try_lock()
     }
 
 
@@ -90,14 +95,13 @@ impl DataBufferInner {
         self.dpav_history.clear();
     }
 
-    pub fn update_dpav(&mut self, turn_damage: f32, av: f32) {
+    pub fn update_dpav(&mut self, av: f32) {
         if av > 0.0 {
-            let dpav = turn_damage / av;
+            let total_damage: f32 = self.total_damage.values().sum();
+            let dpav = total_damage / av;
             self.dpav_history.push(dpav);
             
-            let total_damage: f32 = self.total_damage.values().sum();
-            let total_av: f32 = self.av_history.iter().sum();
-            self.total_dpav = if total_av > 0.0 { total_damage / total_av } else { 0.0 };
+            self.total_dpav = dpav;
         }
     }
 }

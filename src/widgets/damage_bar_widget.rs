@@ -1,4 +1,4 @@
-use eframe::egui::Ui;
+use eframe::egui::{Ui, Vec2};
 use egui_plot::{Bar, BarChart, Legend, Plot};
 
 use crate::app::DamageAnalyzer;
@@ -25,6 +25,7 @@ impl DamageAnalyzer {
             .width(ui.available_width())
             .allow_drag(false)
             .allow_zoom(false)
+            .allow_scroll(false)
             .y_axis_formatter(|y, _| helpers::format_damage(y.value))
             .x_axis_formatter(|x, _| {
                 let bars_data = create_bar_data(&data_buffer);

@@ -6,12 +6,13 @@ use crate::app::DamageAnalyzer;
 impl DamageAnalyzer {
     fn toggle_pin(&mut self) {
         self.state.is_window_pinned = !self.state.is_window_pinned;
-        let mut message_logger = self.message_logger.blocking_lock();
-        message_logger.log(if self.state.is_window_pinned {
-            "Window pinned on top"
-        } else {
-            "Window unpinned"
-        });
+        if let Ok(mut message_logger) = self.message_logger.try_lock() {
+            message_logger.log(if self.state.is_window_pinned {
+                "Window pinned on top"
+            } else {
+                "Window unpinned"
+            });    
+        }
     }
 
     pub fn show_statusbar_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

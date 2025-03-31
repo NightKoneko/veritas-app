@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use eframe::egui::{Stroke, Ui};
 use egui_plot::{Legend, Plot, PlotPoints, Polygon};
+use tokio::sync::MutexGuard;
 
-use crate::{app::DamageAnalyzer, core::helpers};
+use crate::{app::DamageAnalyzer, core::{helpers, models::DataBufferInner}};
 
 
 pub struct PieSegment {
@@ -64,9 +65,9 @@ impl DamageAnalyzer {
             .show_axes([false; 2])
             .allow_drag(false)
             .allow_zoom(false)
+            .allow_scroll(false)
             .show(ui, |plot_ui: &mut egui_plot::PlotUi<'_>| {
                 let data_buffer = self.data_buffer.blocking_lock();
-
                 let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
                 if total > 0.0 {
                     let segments =
