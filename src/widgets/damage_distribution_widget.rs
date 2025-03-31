@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use eframe::egui::{Stroke, Ui};
 use egui_plot::{Legend, Plot, PlotPoints, Polygon};
+use tokio::sync::MutexGuard;
 
-use crate::{app::DamageAnalyzer, core::helpers};
+use crate::{app::DamageAnalyzer, core::{helpers, models::DataBufferInner}};
 
 
 pub struct PieSegment {
@@ -53,6 +54,7 @@ fn create_pie_slice(start_angle: f64, end_angle: f64) -> Vec<[f64; 2]> {
 
 impl DamageAnalyzer {
     pub fn show_damage_distribution_widget(&mut self, ui: &mut Ui) {
+        let data_buffer = self.data_buffer.blocking_lock().clone();
         Plot::new("damage_pie")
             .legend(Legend::default().position(egui_plot::Corner::RightTop))
             .height(300.0)
@@ -64,14 +66,12 @@ impl DamageAnalyzer {
             .show_axes([false; 2])
             .allow_drag(false)
             .allow_zoom(false)
+            .allow_scroll(false)
             .show(ui, |plot_ui: &mut egui_plot::PlotUi<'_>| {
-                let data_buffer = self.data_buffer.blocking_lock();
-
                 let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
                 if total > 0.0 {
                     let segments =
                         create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);
-
                     for (name, segment, i) in segments {
                         let color = helpers::get_character_color(i);
                         let percentage = segment.value / total * 100.0;

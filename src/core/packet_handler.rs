@@ -73,6 +73,10 @@ impl PacketHandler {
     ) {
         if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
             for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
+                // If key doesn't exist, create
+                if !data_buffer.current_turn.contains_key(&avatar.name) {
+                    data_buffer.current_turn.insert(avatar.name.clone(), 0.0);
+                }
                 if damage > 0.0 {
                     message_logger.log(&format!(
                         "Turn summary - {}: {} damage",
@@ -82,17 +86,38 @@ impl PacketHandler {
             }
             message_logger.log(&format!("Total turn damage: {}", turn_data.total_damage));
 
-            let turn_total: f32 = turn_data.total_damage;
             let current_av = (*data_buffer).current_av;
             
-            data_buffer.av_history.push(current_av);
-            
-            if current_av > 0.0 {
-                data_buffer.update_dpav(turn_total, current_av);
+            let current = data_buffer.current_turn.clone();
+
+            let len = data_buffer.av_history.len();
+            if len > 0 {
+                // New AV
+                if data_buffer.av_history[len - 1] != current_av {
+                    data_buffer.av_history.push(current_av);
+                    data_buffer.av_damage.push(current.clone());    
+                }
+                // Same AV as before
+                else {
+                    let map = &mut data_buffer.av_damage[len - 1];
+                    let current_copy = current.clone();
+                    for (k, v) in map {
+                        let dmg = current_copy.get(k).unwrap();
+                        *v += *dmg;
+                    }
+                }
+            }
+            else {
+                data_buffer.av_history.push(current_av);
+                data_buffer.av_damage.push(current.clone());
             }
             
-            let current = data_buffer.current_turn.clone();
+            
             data_buffer.turn_damage.push(current);
+            if current_av > 0.0 {
+                data_buffer.update_dpav(current_av);
+            }
+
             data_buffer.current_turn.clear();
     }
     }
@@ -200,7 +225,7 @@ impl PacketHandler {
             let final_turn = data_buffer.current_turn.clone();
             let av = data_buffer.current_av;
 
-            data_buffer.update_dpav(total_damage, av);
+            data_buffer.update_dpav(av);
             data_buffer.turn_damage.push(final_turn.clone());
 
             Some((final_turn, total_damage))

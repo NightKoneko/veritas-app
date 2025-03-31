@@ -1,4 +1,4 @@
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MessageLogger {
     logs: Vec<String>
 }

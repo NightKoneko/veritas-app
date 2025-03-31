@@ -1,21 +1,27 @@
-use crate::core::message_logger::MessageLogger;
-use crate::core::models::*;
+use crate::core::message_logger::{self, MessageLogger};
+use crate::core::{models::*, packet_handler};
 use crate::core::network::{ConnectionStatus, NetworkClient};
 use crate::core::packet_handler::PacketHandler;
 use eframe::egui::{self};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
-use tokio::time::{sleep, timeout, Instant};
+use tokio::time::{sleep, timeout};
+
+#[derive(PartialEq)]
+pub enum Unit {
+    Turn,
+    ActionValue
+}
 
 pub struct AppState {
     pub is_sidebar_expanded: bool,
     pub is_window_pinned: bool,
     pub show_connection_settings: bool,
     pub show_preferences: bool,
+    pub graph_x_unit: Unit
 }
 
 pub struct DamageAnalyzer {
@@ -24,7 +30,7 @@ pub struct DamageAnalyzer {
     pub connected: Arc<Mutex<bool>>,
     pub data_buffer: Arc<DataBuffer>,
     pub message_logger: Arc<Mutex<MessageLogger>>,
-    pub packet_handler: Arc<Mutex<PacketHandler>>,
+    pub is_there_update: Arc<Mutex<bool>>,
     pub state: AppState,
     pub runtime: Runtime,
 }
@@ -35,10 +41,10 @@ impl DamageAnalyzer {
 
         let message_logger = Arc::new(Mutex::new(MessageLogger::default()));
         let data_buffer = Arc::new(DataBuffer::new());
-        let packet_handler = Arc::new(Mutex::new(PacketHandler::new(
+        let packet_handler = PacketHandler::new(
             message_logger.clone(),
             data_buffer.clone(),
-        )));
+        );
 
         let app = Self {
             server_addr: Mutex::new("127.0.0.1".to_string()).into(),
@@ -46,12 +52,13 @@ impl DamageAnalyzer {
             connected: Mutex::new(false).into(),
             data_buffer,
             message_logger,
-            packet_handler,
+            is_there_update: Mutex::new(false).into(),
             state: AppState {
                 is_sidebar_expanded: false,
                 is_window_pinned: false,
                 show_connection_settings: false,
                 show_preferences: false,
+                graph_x_unit: Unit::Turn
             },
             runtime: Runtime::new().unwrap(),
         };
@@ -59,29 +66,30 @@ impl DamageAnalyzer {
         // Enter the runtime so that `tokio::spawn` is available immediately.
         let _enter = app.runtime.enter();
 
-        app.start_background_workers(&cc.egui_ctx);
+        app.start_background_workers(&cc.egui_ctx, packet_handler);
 
         app
     }
 
-    fn start_background_workers(&self, ctx: &egui::Context) {
+    fn start_background_workers(&self, ctx: &egui::Context, packet_handler: PacketHandler) {
         let (status_tx, status_rx) = mpsc::channel(1);
         let (payload_tx, payload_rx) = mpsc::channel(100);
 
         self.start_connection_worker(payload_tx, status_tx);
-        self.start_packet_worker(payload_rx, ctx.clone());
+        self.start_packet_worker(payload_rx, ctx.clone(), packet_handler);
         self.start_connection_status_worker(status_rx);
     }
 
-    fn start_packet_worker(&self, mut payload_rx: mpsc::Receiver<Packet>, ctx: egui::Context) {
-        let packet_handler = self.packet_handler.clone();
+    fn start_packet_worker(&self, mut payload_rx: mpsc::Receiver<Packet>, ctx: egui::Context, mut packet_handler: PacketHandler) {
+        let is_there_update = self.is_there_update.clone();
         self.runtime.spawn(async move {
             loop {
-                let mut packet_handler = packet_handler.lock().await;
-                if packet_handler.handle_packets(&mut payload_rx).await {
+                let mut is_there_update_lock = is_there_update.lock().await;
+                *is_there_update_lock = packet_handler.handle_packets(&mut payload_rx).await;
+                if *is_there_update_lock && !ctx.has_requested_repaint() {
                     ctx.request_repaint();
                 }
-                drop(packet_handler);
+                drop(is_there_update_lock);
                 sleep(Duration::from_millis(10)).await;
             }
         });
@@ -101,16 +109,24 @@ impl DamageAnalyzer {
             // Try connecting
             loop {
                 let is_connected = network_client
-                    .start_connection(&status_tx, &server_addr.clone(), &server_port.clone())
+                    .start_connection(&status_tx, &server_addr, &server_port)
                     .await;
 
                 if is_connected {
+                    // let orig_server_addr = (*server_addr.lock().await).clone();
+                    // let orig_server_port = (*server_port.lock().await).clone();
+
                     static MAX_RETRIES: usize = 2;
                     static INITIAL_TIMEOUT: Duration = Duration::from_secs(1);
                     let mut retries = 0;
                     let mut timeout_duration = INITIAL_TIMEOUT;
                     // Try receiving packets
                     loop {
+                        // Why is this not working??
+                        // if orig_server_addr != *server_addr.lock().await || orig_server_port != *server_addr.lock().await {
+                        //     network_client.disconnect().await;
+                        //     break;
+                        // }
                         match timeout(timeout_duration, network_client.start_receiving(&payload_tx)).await {
                             // If no timeout
                             Ok(v) => {
@@ -129,6 +145,7 @@ impl DamageAnalyzer {
                                 else {
                                     retries = 0;
                                     timeout_duration = INITIAL_TIMEOUT;
+                                    sleep(Duration::from_millis(10)).await;
                                 }
                             }
                             // If timeout
@@ -151,8 +168,6 @@ impl DamageAnalyzer {
     }
 
     fn start_connection_status_worker(&self, mut status_rx: Receiver<ConnectionStatus>) {
-        // This is kinda useless bc we don't know when the connection has been severed
-        // For it to try to reconnect again
         let server_addr = self.server_addr.clone();
         let server_port = self.server_port.clone();
 
@@ -197,5 +212,6 @@ impl eframe::App for DamageAnalyzer {
         self.show_av_panel(ctx, _frame);
 
         self.show_central_panel(ctx, _frame);
+
     }
 }
