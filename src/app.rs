@@ -215,8 +215,6 @@ impl DamageAnalyzer {
 
 impl eframe::App for DamageAnalyzer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.set_window_pin(ctx, self.state.is_window_pinned);
-
         self.show_menubar_panel(ctx, _frame);
         self.show_statusbar_panel(ctx, _frame);
 
