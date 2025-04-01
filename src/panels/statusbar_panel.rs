@@ -1,11 +1,13 @@
-use eframe::{egui::{self, Align, Button, Color32, CornerRadius, Label, Shadow, Vec2}, Frame};
-use egui_material_icons::icons::ICON_WIFI;
+use eframe::egui::{self, Label};
+use egui_material_icons::icons::{ICON_WIFI, ICON_LOCATION_ON, ICON_LOCATION_OFF};
 
 use crate::app::DamageAnalyzer;
 
 impl DamageAnalyzer {
-    fn toggle_pin(&mut self) {
+    fn toggle_pin(&mut self, ctx: &egui::Context) {
         self.state.is_window_pinned = !self.state.is_window_pinned;
+        self.set_window_pin(ctx, self.state.is_window_pinned);
+        
         let mut message_logger = self.message_logger.blocking_lock();
         message_logger.log(if self.state.is_window_pinned {
             "Window pinned on top"
@@ -38,15 +40,20 @@ impl DamageAnalyzer {
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .button(if self.state.is_window_pinned {
-                            "Unpin Window"
+                    ui.add(Label::new(egui_material_icons::icon_text(
+                        if self.state.is_window_pinned {
+                            ICON_LOCATION_ON
                         } else {
-                            "Pin Window"
-                        })
-                        .clicked()
-                    {
-                        self.toggle_pin();
+                            ICON_LOCATION_OFF
+                        }
+                    )));
+
+                    if ui.button(if self.state.is_window_pinned {
+                        "Unpin Window" 
+                    } else {
+                        "Pin Window"
+                    }).clicked() {
+                        self.toggle_pin(ctx);
                     }
                 });
             });

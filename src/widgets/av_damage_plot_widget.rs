@@ -1,8 +1,7 @@
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
-use tokio::sync::MutexGuard;
 
-use crate::{app::DamageAnalyzer, core::{helpers, models::DataBufferInner}};
+use crate::{app::DamageAnalyzer, core::helpers};
 
 impl DamageAnalyzer {
     pub fn show_av_damage_plot_widget(&mut self, ui: &mut Ui) {

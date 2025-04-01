@@ -1,5 +1,5 @@
 use std::{
-    ffi::OsString, fs, mem::{self, MaybeUninit}, os::windows::ffi::OsStrExt, path::Path, str::FromStr, sync::LazyLock
+    fs, mem::{self, MaybeUninit}, os::windows::ffi::OsStrExt, path::Path
 };
 
 use windows::{core::{s, PWSTR}, Win32::{Foundation::{CloseHandle, HANDLE, LUID}, System::{Diagnostics::Debug::WriteProcessMemory, LibraryLoader::{GetModuleHandleW, GetProcAddress}, Memory::{self, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE}, Threading::{CreateRemoteThread, WaitForSingleObject, CREATE_NEW_CONSOLE, INFINITE, PROCESS_INFORMATION, STARTUPINFOW}}}};

@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::{io::AsyncReadExt, sync::Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use crate::core::models::Packet;
 
 

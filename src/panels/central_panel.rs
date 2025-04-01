@@ -1,7 +1,6 @@
 use eframe::egui::{self, Ui};
-use tokio::sync::MutexGuard;
 
-use crate::{app::{DamageAnalyzer, Unit}, core::models::DataBufferInner};
+use crate::app::{DamageAnalyzer, Unit};
 
 impl DamageAnalyzer {
     pub fn show_central_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
