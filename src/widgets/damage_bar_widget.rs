@@ -1,4 +1,4 @@
-use eframe::egui::Ui;
+use eframe::egui::{Ui, Vec2};
 use egui_plot::{Bar, BarChart, Legend, Plot};
 
 use crate::app::DamageAnalyzer;

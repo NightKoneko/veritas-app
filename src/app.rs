@@ -1,5 +1,5 @@
-use crate::core::message_logger::MessageLogger;
-use crate::core::models::*;
+use crate::core::message_logger::{self, MessageLogger};
+use crate::core::{models::*, packet_handler};
 use crate::core::network::{ConnectionStatus, NetworkClient};
 use crate::core::packet_handler::PacketHandler;
 use eframe::egui::{self};
@@ -201,22 +201,10 @@ impl DamageAnalyzer {
             }
         });
     }
-
-    pub fn set_window_pin(&self, ctx: &egui::Context, pinned: bool) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-            if pinned {
-                egui::WindowLevel::AlwaysOnTop
-            } else {
-                egui::WindowLevel::Normal
-            }
-        ));
-    }
 }
 
 impl eframe::App for DamageAnalyzer {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.set_window_pin(ctx, self.state.is_window_pinned);
-
         self.show_menubar_panel(ctx, _frame);
         self.show_statusbar_panel(ctx, _frame);
 
