@@ -1,8 +1,8 @@
 use std::{
-    ffi::OsString, fs, mem::{self, MaybeUninit}, os::windows::ffi::OsStrExt, path::Path, str::FromStr, sync::LazyLock
+    fs, mem::{self}, os::windows::ffi::OsStrExt, path::Path
 };
 
-use windows::{core::{s, PWSTR}, Win32::{Foundation::{CloseHandle, HANDLE, LUID}, System::{Diagnostics::Debug::WriteProcessMemory, LibraryLoader::{GetModuleHandleW, GetProcAddress}, Memory::{self, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE}, Threading::{CreateRemoteThread, WaitForSingleObject, CREATE_NEW_CONSOLE, INFINITE, PROCESS_INFORMATION, STARTUPINFOW}}}};
+use windows::{core::{s, PWSTR}, Win32::{Foundation::{CloseHandle, HANDLE, LUID}, Security::LUID_AND_ATTRIBUTES, System::{Diagnostics::Debug::WriteProcessMemory, LibraryLoader::{GetModuleHandleW, GetProcAddress}, Memory::{self, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE}, Threading::{CreateRemoteThread, WaitForSingleObject, CREATE_NEW_CONSOLE, INFINITE, PROCESS_INFORMATION, STARTUPINFOW}}}};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
@@ -24,35 +24,37 @@ use windows::{
 // https://github.com/3gstudent/Inject-dll-by-APC/blob/master/CreateRemoteThread.cpp
 fn enable_debug_priv() {
     unsafe {
-        let mut h_token: MaybeUninit<HANDLE> = MaybeUninit::uninit();
-        let mut luid: MaybeUninit<LUID> = MaybeUninit::zeroed();
-        let tkp: MaybeUninit<TOKEN_PRIVILEGES> = MaybeUninit::zeroed();
+        let mut h_token = HANDLE::default();
+        let mut luid = LUID::default();
+        let tkp = TOKEN_PRIVILEGES {
+            PrivilegeCount: 1,
+            Privileges: [LUID_AND_ATTRIBUTES {
+                Luid: luid,
+                Attributes: SE_PRIVILEGE_ENABLED,
+            }],
+        };
         match OpenProcessToken(
             GetCurrentProcess(),
             TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-            h_token.as_mut_ptr(),
+            &mut h_token,
         ) {
             Ok(_) => {
                 LookupPrivilegeValueW(
                     None,
                     SE_DEBUG_NAME,
-                    luid.as_mut_ptr()
+                    &mut luid
                 ).unwrap();
 
-                tkp.assume_init().PrivilegeCount = 1;
-                tkp.assume_init().Privileges[0].Luid = luid.assume_init();
-                tkp.assume_init().Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
                 AdjustTokenPrivileges(
-                    h_token.assume_init(),
+                    h_token,
                     false,
-                    Some(tkp.as_ptr()),
+                    Some(&tkp),
                     mem::size_of::<TOKEN_PRIVILEGES>() as u32,
                     None,
                     None,
                 ).unwrap();
         
-                CloseHandle(h_token.assume_init()).unwrap();        
+                CloseHandle(h_token).unwrap();        
             },
             Err(e) => println!("{}", e)
         }
@@ -62,15 +64,17 @@ fn enable_debug_priv() {
 fn find_process(process_name: &str) -> Option<HANDLE> {
     unsafe {
         let process_name = process_name.to_lowercase();
-        let mut entry: PROCESSENTRY32W = mem::zeroed();
-        entry.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut entry = PROCESSENTRY32W {
+            dwSize: mem::size_of::<PROCESSENTRY32W>() as _,
+            ..Default::default()
+        };
 
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
 
         if Process32FirstW(snapshot, &mut entry as _).is_ok() {
             loop {
-                let proc_name: String = String::from_utf16_lossy(entry.szExeFile.as_slice());
-                // This is case sensitive
+                let proc_name = String::from_utf16_lossy(entry.szExeFile.as_slice());
+                // Makes it case insensitive
                 if proc_name.to_lowercase().starts_with(&process_name) {
                     let h_process = Threading::OpenProcess(
                         PROCESS_ALL_ACCESS,
@@ -91,11 +95,13 @@ fn find_process(process_name: &str) -> Option<HANDLE> {
 pub fn inject_payload(process: HANDLE, module_path: &str) {
     unsafe {
         let path = fs::canonicalize(Path::new(module_path)).unwrap();
-        let mut module_path_buf = path.as_os_str().encode_wide().collect::<Vec<u16>>();
-        // Add null terminator
-        module_path_buf.push(0);
+        let module_path_buf = path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
         // # of bytes
-        let len = module_path_buf.len() * 2;
+        let len = module_path_buf.len() * size_of::<u16>();
 
         let p_thread_data = Memory::VirtualAllocEx(
             process,
@@ -148,14 +154,18 @@ pub fn hijack_process(process_name: &str, module_path: &str) {
 
 pub fn start_hijacked_process(proc_path: &str, module_path: &str) {
     unsafe {
-        let mut lp_startup_info: MaybeUninit<STARTUPINFOW> = MaybeUninit::zeroed();
-        lp_startup_info.assume_init().cb = size_of::<STARTUPINFOW>() as _;
-        let mut lp_process_information: MaybeUninit<PROCESS_INFORMATION> = MaybeUninit::zeroed();
-
         let path = fs::canonicalize(Path::new(proc_path)).unwrap();
-        let mut proc_path_buf = path.as_os_str().encode_wide().collect::<Vec<u16>>();
-        // Add null terminator
-        proc_path_buf.push(0);
+        let mut proc_path_buf = path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        let mut lp_startup_info = STARTUPINFOW {
+            cb: size_of::<STARTUPINFOW>() as _,
+            ..Default::default()
+        };
+        let mut lp_process_information = PROCESS_INFORMATION::default();
 
         enable_debug_priv();
         CreateProcessW(
@@ -167,11 +177,11 @@ pub fn start_hijacked_process(proc_path: &str, module_path: &str) {
             CREATE_NEW_CONSOLE,
             None,
             None,
-            lp_startup_info.as_mut_ptr(),
-            lp_process_information.as_mut_ptr(),
+            &mut lp_startup_info,
+            &mut lp_process_information,
         ).unwrap();
         
-        let h_process = lp_process_information.assume_init().hProcess;
+        let h_process = lp_process_information.hProcess;
         inject_payload(h_process, module_path);
     };
 }

@@ -1,5 +1,5 @@
-use crate::core::message_logger::{self, MessageLogger};
-use crate::core::{models::*, packet_handler};
+use crate::core::message_logger::MessageLogger;
+use crate::core::models::*;
 use crate::core::network::{ConnectionStatus, NetworkClient};
 use crate::core::packet_handler::PacketHandler;
 use eframe::egui::{self};
@@ -189,7 +189,7 @@ impl DamageAnalyzer {
                             );
                             message_logger_lock.log(&format!("Connected to {}", addr));
                         }
-                        ConnectionStatus::Failed(err) => {
+                        ConnectionStatus::Failed(_err) => {
                             *connected_lock = false;
                             // Unsure how to handle this well
                             // message_logger_lock.log(&format!("Failed to connect: {}", err));

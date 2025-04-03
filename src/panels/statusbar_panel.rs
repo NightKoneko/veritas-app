@@ -1,4 +1,4 @@
-use eframe::{egui::{self, Align, Button, Color32, CornerRadius, Label, Shadow, Vec2}, Frame};
+use eframe::egui::{self, Label};
 use egui_material_icons::icons::ICON_WIFI;
 
 use crate::app::DamageAnalyzer;

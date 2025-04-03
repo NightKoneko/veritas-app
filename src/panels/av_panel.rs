@@ -1,10 +1,8 @@
-use std::iter::zip;
 
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
-use tokio::sync::MutexGuard;
 
-use crate::{app::DamageAnalyzer, core::{helpers, models::DataBufferInner}};
+use crate::{app::DamageAnalyzer, core::helpers};
 
 impl DamageAnalyzer {
     pub fn show_av_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
