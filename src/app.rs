@@ -189,7 +189,7 @@ impl DamageAnalyzer {
                             );
                             message_logger_lock.log(&format!("Connected to {}", addr));
                         }
-                        ConnectionStatus::Failed(err) => {
+                        ConnectionStatus::Failed(_err) => {
                             *connected_lock = false;
                             // Unsure how to handle this well
                             // message_logger_lock.log(&format!("Failed to connect: {}", err));
@@ -200,16 +200,6 @@ impl DamageAnalyzer {
                 sleep(Duration::from_secs(1)).await;
             }
         });
-    }
-
-    pub fn set_window_pin(&self, ctx: &egui::Context, pinned: bool) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-            if pinned {
-                egui::WindowLevel::AlwaysOnTop
-            } else {
-                egui::WindowLevel::Normal
-            }
-        ));
     }
 }
 

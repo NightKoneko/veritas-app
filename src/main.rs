@@ -13,6 +13,7 @@ mod panels;
 use eframe::egui::{self, IconData};
 use std::sync::Arc;
 
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

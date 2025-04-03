@@ -1,5 +1,7 @@
+
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints};
+
 use crate::{app::DamageAnalyzer, core::helpers};
 
 impl DamageAnalyzer {

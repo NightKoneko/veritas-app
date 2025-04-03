@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+
 use eframe::egui::{Stroke, Ui};
 use egui_plot::{Legend, Plot, PlotPoints, Polygon};
+
 use crate::{app::DamageAnalyzer, core::helpers};
 
 
