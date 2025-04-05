@@ -26,7 +26,7 @@ impl DamageAnalyzer {
             ui.horizontal(|ui| {
                 ui.label("Total Damage:");
                 ui.label(helpers::format_damage(
-                    data_buffer.total_damage.values().sum::<f32>() as f64
+                    data_buffer.total_damage.values().sum::<f64>()
                 ));
             });
             ui.horizontal(|ui| {

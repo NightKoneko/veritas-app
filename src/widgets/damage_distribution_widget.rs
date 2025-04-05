@@ -11,8 +11,8 @@ pub struct PieSegment {
     pub value: f64,
 }
 
-fn create_pie_segments(damage_map: &HashMap<String, f32>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
-    let total: f64 = damage_map.values().sum::<f32>() as f64;
+fn create_pie_segments(damage_map: &HashMap<String, f64>, column_names: &[String]) -> Vec<(String, PieSegment, usize)> {
+    let total: f64 = damage_map.values().sum::<f64>() as f64;
     let mut segments = Vec::new();
     let mut start_angle = -std::f64::consts::FRAC_PI_2; 
 
@@ -67,7 +67,7 @@ impl DamageAnalyzer {
             .allow_zoom(false)
             .allow_scroll(false)
             .show(ui, |plot_ui: &mut egui_plot::PlotUi<'_>| {
-                let total: f64 = data_buffer.total_damage.values().sum::<f32>() as f64;
+                let total: f64 = data_buffer.total_damage.values().sum::<f64>() as f64;
                 if total > 0.0 {
                     let segments =
                         create_pie_segments(&data_buffer.total_damage, &data_buffer.column_names);

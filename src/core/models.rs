@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -7,22 +7,51 @@ pub struct Avatar {
     pub name: String,
 }
 
+impl fmt::Display for Avatar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Skill {
+    pub name: String,
+    pub r#type: String,
+}
+
+impl fmt::Display for Skill {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] {}", self.r#type, self.name)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillData {
+    pub avatar: Avatar,
+    pub skill: Skill 
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ErrorData {
+    pub msg: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DamageData {
     pub attacker: Avatar,
-    pub damage: f32,
+    pub damage: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TurnData {
     pub avatars: Vec<Avatar>,
-    pub avatars_damage: Vec<f32>,
-    pub total_damage: f32,
+    pub avatars_damage: Vec<f64>,
+    pub total_damage: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TurnBeginData {
-    pub action_value: f32,
+    pub action_value: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,7 +70,6 @@ pub struct SetupData {
     pub avatars: Vec<Avatar>,
 }
 
-
 #[derive(Debug)]
 pub struct DataBuffer {
     inner: Mutex<DataBufferInner>,
@@ -49,16 +77,16 @@ pub struct DataBuffer {
 
 #[derive(Debug, Clone, Default)]
 pub struct DataBufferInner {
-    pub rows: Vec<Vec<f32>>,
+    pub rows: Vec<Vec<f64>>,
     pub column_names: Vec<String>,
-    pub total_damage: HashMap<String, f32>,
-    pub av_damage: Vec<HashMap<String, f32>>,
-    pub turn_damage: Vec<HashMap<String, f32>>,
-    pub current_turn: HashMap<String, f32>,
-    pub current_av: f32,
-    pub av_history: Vec<f32>,
-    pub total_dpav: f32,
-    pub dpav_history: Vec<f32>,
+    pub total_damage: HashMap<String, f64>,
+    pub av_damage: Vec<HashMap<String, f64>>,
+    pub turn_damage: Vec<HashMap<String, f64>>,
+    pub current_turn: HashMap<String, f64>,
+    pub current_av: f64,
+    pub av_history: Vec<f64>,
+    pub total_dpav: f64,
+    pub dpav_history: Vec<f64>,
 }
 
 impl DataBuffer {
@@ -95,9 +123,9 @@ impl DataBufferInner {
         self.dpav_history.clear();
     }
 
-    pub fn update_dpav(&mut self, av: f32) {
+    pub fn update_dpav(&mut self, av: f64) {
         if av > 0.0 {
-            let total_damage: f32 = self.total_damage.values().sum();
+            let total_damage: f64 = self.total_damage.values().sum();
             let dpav = total_damage / av;
             self.dpav_history.push(dpav);
             
