@@ -5,7 +5,7 @@ use tokio::sync::{mpsc, Mutex, MutexGuard};
 
 use crate::{core::message_logger::MessageLogger, core::models::{DamageData, DataBuffer, KillData, Packet, SetupData, TurnData, TurnBeginData}};
 
-use super::models::DataBufferInner;
+use super::models::{DataBufferInner, ErrorData, SkillData};
 
 pub struct PacketHandler {
     message_logger: Arc<Mutex<MessageLogger>>,
@@ -35,13 +35,15 @@ impl PacketHandler {
         match payload_rx.try_recv() {
             Ok(packet) => {
                 match packet.r#type.as_str() {
-                    "SetBattleLineup" => self.handle_lineup(&packet.data, message_logger_lock, data_buffer_lock),
-                    "BattleBegin" => self.handle_battle_begin(&packet.data, message_logger_lock, data_buffer_lock),
-                    "TurnBegin" => self.handle_turn_begin(&packet.data, message_logger_lock, data_buffer_lock),
-                    "OnDamage" => self.handle_damage(&packet.data, message_logger_lock, data_buffer_lock),
-                    "TurnEnd" => self.handle_turn_end(&packet.data, message_logger_lock, data_buffer_lock),
-                    "OnKill" => self.handle_kill(&packet.data, message_logger_lock, data_buffer_lock),
+                    "SetBattleLineup" => self.handle_lineup(packet.data, message_logger_lock, data_buffer_lock),
+                    "BattleBegin" => self.handle_battle_begin(packet.data, message_logger_lock, data_buffer_lock),
+                    "TurnBegin" => self.handle_turn_begin(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnDamage" => self.handle_damage(packet.data, message_logger_lock, data_buffer_lock),
+                    "TurnEnd" => self.handle_turn_end(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnKill" => self.handle_kill(packet.data, message_logger_lock, data_buffer_lock),
                     "BattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
+                    "OnUseSkill" => self.handle_on_skill_use(packet.data, message_logger_lock, data_buffer_lock),
+                    "Error" => self.handle_error(packet.data, message_logger_lock, data_buffer_lock),
                     _ => {
                         is_there_update = false;
                         message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type))
@@ -55,11 +57,11 @@ impl PacketHandler {
 
     fn handle_turn_begin(
         &mut self,
-        data: &serde_json::Value,
+        data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        if let Ok(turn_data) = serde_json::from_value::<TurnBeginData>(data.clone()) {
+        if let Ok(turn_data) = serde_json::from_value::<TurnBeginData>(data) {
             data_buffer.current_av = turn_data.action_value;
             message_logger.log(&format!("Turn begin - AV: {:.2}", turn_data.action_value));
         }
@@ -67,11 +69,11 @@ impl PacketHandler {
     
     fn handle_turn_end(
         &mut self,
-        data: &serde_json::Value,
+        data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        if let Ok(turn_data) = serde_json::from_value::<TurnData>(data.clone()) {
+        if let Ok(turn_data) = serde_json::from_value::<TurnData>(data) {
             for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
                 // If key doesn't exist, create
                 if !data_buffer.current_turn.contains_key(&avatar.name) {
@@ -124,11 +126,11 @@ impl PacketHandler {
     
     fn handle_lineup(
         &mut self,
-        data: &serde_json::Value,
+        data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        if let Ok(lineup_data) = serde_json::from_value::<SetupData>(data.clone()) {
+        if let Ok(lineup_data) = serde_json::from_value::<SetupData>(data) {
             let names: Vec<String> = lineup_data.avatars.iter().map(|a| a.name.clone()).collect();
             
             fs::create_dir_all("damage_logs").unwrap_or_else(|e| {
@@ -163,7 +165,7 @@ impl PacketHandler {
     }
     
     fn handle_battle_begin(&mut self,
-        _data: &serde_json::Value,
+        _data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut _data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
@@ -172,11 +174,11 @@ impl PacketHandler {
     
     fn handle_damage(
         &mut self,
-        data: &serde_json::Value,
+        data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        if let Ok(damage_data) = serde_json::from_value::<DamageData>(data.clone()) {
+        if let Ok(damage_data) = serde_json::from_value::<DamageData>(data) {
         let attacker = damage_data.attacker.name.clone();
         let damage = damage_data.damage;
         
@@ -206,11 +208,11 @@ impl PacketHandler {
     
     fn handle_kill(
         &mut self,
-        data: &serde_json::Value,
+        data: serde_json::Value,
         mut message_logger: MutexGuard<'_, MessageLogger>,
         mut _data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
-        if let Ok(kill_data) = serde_json::from_value::<KillData>(data.clone()) {
+        if let Ok(kill_data) = serde_json::from_value::<KillData>(data) {
             message_logger.log(&format!("{} has killed", kill_data.attacker.name));
         }
     }
@@ -221,7 +223,7 @@ impl PacketHandler {
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         let final_turn_data = if !data_buffer.current_turn.is_empty() {
-            let total_damage: f32 = data_buffer.current_turn.values().sum();
+            let total_damage: f64 = data_buffer.current_turn.values().sum();
             let final_turn = data_buffer.current_turn.clone();
             let av = data_buffer.current_av;
 
@@ -247,5 +249,28 @@ impl PacketHandler {
     
         self.csv_writer = None;
         message_logger.log("Battle ended - CSV file closed");
+    }
+
+    fn handle_on_skill_use(
+        &mut self,
+        data: serde_json::Value,
+        mut message_logger: MutexGuard<'_, MessageLogger>,
+        mut _data_buffer: MutexGuard<'_, DataBufferInner>
+    ) {
+        if let Ok(skill_data) = serde_json::from_value::<SkillData>(data) {
+            message_logger.log(&format!("{} used {}", skill_data.avatar, skill_data.skill));
+        }    
+    }
+
+
+    fn handle_error(
+        &mut self,
+        data: serde_json::Value,
+        mut message_logger: MutexGuard<'_, MessageLogger>,
+        mut _data_buffer: MutexGuard<'_, DataBufferInner>
+    ) {
+        if let Ok(error) = serde_json::from_value::<ErrorData>(data) {
+            message_logger.log(&format!("{}", error.msg));
+        }
     }
 }

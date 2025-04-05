@@ -2,7 +2,7 @@ use std::{
     fs, mem::{self}, os::windows::ffi::OsStrExt, path::Path
 };
 
-use windows::{core::{s, PWSTR}, Win32::{Foundation::{CloseHandle, HANDLE, LUID}, Security::LUID_AND_ATTRIBUTES, System::{Diagnostics::Debug::WriteProcessMemory, LibraryLoader::{GetModuleHandleW, GetProcAddress}, Memory::{self, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE}, Threading::{CreateRemoteThread, WaitForSingleObject, CREATE_NEW_CONSOLE, INFINITE, PROCESS_INFORMATION, STARTUPINFOW}}}};
+use windows::{core::{s, PWSTR}, Win32::{Foundation::{CloseHandle, HANDLE, LUID}, Security::LUID_AND_ATTRIBUTES, System::{Diagnostics::Debug::WriteProcessMemory, LibraryLoader::{GetModuleHandleW, GetProcAddress}, Memory::{self, MEM_COMMIT, MEM_RESERVE, PAGE_READWRITE}, Threading::{CreateRemoteThread, ResumeThread, WaitForSingleObject, CREATE_NEW_CONSOLE, CREATE_SUSPENDED, INFINITE, PROCESS_INFORMATION, STARTUPINFOW}}}};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LookupPrivilegeValueW, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
@@ -94,7 +94,7 @@ fn find_process(process_name: &str) -> Option<HANDLE> {
 
 pub fn inject_payload(process: HANDLE, module_path: &str) {
     unsafe {
-        let path = fs::canonicalize(Path::new(module_path)).unwrap();
+        let path = std::path::absolute(module_path).unwrap();
         let module_path_buf = path
             .as_os_str()
             .encode_wide()
@@ -154,7 +154,7 @@ pub fn hijack_process(process_name: &str, module_path: &str) {
 
 pub fn start_hijacked_process(proc_path: &str, module_path: &str) {
     unsafe {
-        let path = fs::canonicalize(Path::new(proc_path)).unwrap();
+        let path = std::path::absolute(proc_path).unwrap();
         let mut proc_path_buf = path
             .as_os_str()
             .encode_wide()
@@ -174,14 +174,15 @@ pub fn start_hijacked_process(proc_path: &str, module_path: &str) {
             None,
             None,
             false,
-            CREATE_NEW_CONSOLE,
+            CREATE_SUSPENDED,
             None,
             None,
             &mut lp_startup_info,
             &mut lp_process_information,
         ).unwrap();
         
-        let h_process = lp_process_information.hProcess;
-        inject_payload(h_process, module_path);
+        inject_payload(lp_process_information.hProcess, module_path);
+
+        ResumeThread(lp_process_information.hThread);
     };
 }

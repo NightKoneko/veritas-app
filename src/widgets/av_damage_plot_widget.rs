@@ -21,7 +21,7 @@ impl DamageAnalyzer {
                         .iter()
                         .map(|dmg_map| dmg_map.get(name).unwrap())
                         .copied()
-                        .collect::<Vec<f32>>();
+                        .collect::<Vec<f64>>();
 
                     let points = data_buffer.av_history
                         .iter()
