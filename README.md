@@ -17,6 +17,8 @@ cargo run --release
 target/release/veritas.exe
 ```
 
-2. Enter battle in-game
+2. Run the game.
 
-3. Damage should now be logging and visualizations (graphs) updating accordingly.
+3. In the executable's menubar, click `Tools→Spawn Server`.
+
+3. Enter battle in-game. Damage should now be logging and visualizations (graphs) updating accordingly.
