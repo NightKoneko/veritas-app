@@ -1,21 +1,22 @@
-# veritas-app
+# veritas
+This is still a work in progress. This only works with global-beta. Do NOT attempt to use this while the official version is running. It will not work.
 
-Made to be used with [Veritas](https://github.com/hessiser/veritas)
+# Usage
+Download a build from Releases. Then, download the executable's module [veritas](https://github.com/hessiser/veritas) and place in the root directory of the executable. This module will need to be downloaded almost every patch.
 
-This is still a work in progress
+# Building
+## Prerequisites
+[Rust](https://www.rust-lang.org/tools/install)
 
-## How to use:
+## Steps
+1. In a terminal, run:
+```
+git clone https://github.com/NightKoneko/veritas-app.git
+cd veritas-app
+cargo run --release
+target/release/veritas.exe
+```
 
-1. `git clone https://github.com/NightKoneko/veritas-app.git`
+2. Enter battle in-game
 
-2. Inject [Veritas](https://github.com/hessiser/veritas) (You can download a prebuilt Veritas DLL from releases or alternatively build it yourself) into the game. This can be done with a tool like [Genshin Utility](https://github.com/lanylow/genshin-utility) or Cheat Engine.
-
-   * In the case of [Genshin Utility](https://github.com/lanylow/genshin-utility), rename `veritas.dll` to `library.dll` and replace the previous `library.dll` with it. **Make sure to run `loader.exe` as administrator.**
-
-3. `cargo run --release`
-
-4. Click the 'Connect' button
-
-5. Enter battle in-game
-
-6. Damage should now be logging and visualizations (graphs) updating accordingly.
+3. Damage should now be logging and visualizations (graphs) updating accordingly.

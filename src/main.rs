@@ -11,6 +11,7 @@ mod widgets;
 mod panels;
 
 use eframe::egui::{self, IconData};
+use core::launcher::start_hijacked_process;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {

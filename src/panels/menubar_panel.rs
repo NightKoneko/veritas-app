@@ -1,6 +1,6 @@
 use eframe::egui::{self, ThemePreference};
 
-use crate::{app::DamageAnalyzer, core::inject::hijack_process};
+use crate::{app::DamageAnalyzer, core::launcher::hijack_process};
 
 impl DamageAnalyzer {
     pub fn show_menubar_panel(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
