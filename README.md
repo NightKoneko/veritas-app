@@ -1,5 +1,7 @@
 # veritas
-[![Join us on Telegram](https://img.shields.io/badge/Telegram-Join%20Chat-blue?logo=telegram)](https://t.me/+rhvQpewK2Nk3ZDZh)
+[![veritas](https://img.shields.io/badge/veritas-Discord-%235865F2.svg)](https://discord.gg/Y9kSnPk95H)
+
+
 
 This is still a work in progress. This only works with global-beta. Do NOT attempt to use this while the official version is running. It will not work.
 
