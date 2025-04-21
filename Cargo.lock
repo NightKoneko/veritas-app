@@ -1109,6 +1109,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_zhcn_fonts"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23009129c28cd5fdab3b93c8990bf35009979582cc2fdd207d2e34cfdf2351b6"
+dependencies = [
+ "egui",
+ "findfont",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1246,6 +1256,12 @@ checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
 ]
+
+[[package]]
+name = "findfont"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95d8c4882f6b4581d37ff397b1fc538a70ef65b6e170c39b46836da8936f9737"
 
 [[package]]
 name = "flate2"
@@ -3571,6 +3587,7 @@ dependencies = [
  "eframe",
  "egui_material_icons",
  "egui_plot",
+ "egui_zhcn_fonts",
  "image",
  "serde",
  "serde_json",
