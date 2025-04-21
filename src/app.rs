@@ -38,6 +38,7 @@ pub struct DamageAnalyzer {
 impl DamageAnalyzer {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         egui_material_icons::initialize(&cc.egui_ctx);
+        egui_zhcn_fonts::add_sys_ui_fonts(&cc.egui_ctx);
 
         let message_logger = Arc::new(Mutex::new(MessageLogger::default()));
         let data_buffer = Arc::new(DataBuffer::new());
