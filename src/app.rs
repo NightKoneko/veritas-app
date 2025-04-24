@@ -2,7 +2,10 @@ use crate::core::message_logger::MessageLogger;
 use crate::core::models::*;
 use crate::core::network::{ConnectionStatus, NetworkClient};
 use crate::core::packet_handler::PacketHandler;
+use crate::core::config::Config;
+use crate::core::updater::Updater;
 use eframe::egui::{self};
+use egui_toast::{ToastOptions, Toast, ToastKind, Toasts};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -10,18 +13,31 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{sleep, timeout};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum Unit {
     Turn,
     ActionValue
 }
 
+pub struct UpdateState {
+    pub downloaded: bool,
+}
+
+#[derive(Clone)]
 pub struct AppState {
     pub is_sidebar_expanded: bool,
     pub is_window_pinned: bool,
     pub show_connection_settings: bool,
     pub show_preferences: bool,
-    pub graph_x_unit: Unit
+    pub show_launcher: bool,
+    pub game_path: Option<String>, 
+    pub graph_x_unit: Unit,
+    pub config: Config,
+    pub show_about: bool,
+    pub show_updates: bool,
+    pub checked_app_version: Option<String>,
+    pub checked_dll_version: Option<String>,
+    pub update_state: Arc<Mutex<UpdateState>>,
 }
 
 pub struct DamageAnalyzer {
@@ -33,6 +49,8 @@ pub struct DamageAnalyzer {
     pub is_there_update: Arc<Mutex<bool>>,
     pub state: AppState,
     pub runtime: Runtime,
+    pub updater: Updater,
+    pub toasts: Arc<Mutex<Toasts>>,
 }
 
 impl DamageAnalyzer {
@@ -47,7 +65,7 @@ impl DamageAnalyzer {
             data_buffer.clone(),
         );
 
-        let app = Self {
+        let mut app = Self {
             server_addr: Mutex::new("127.0.0.1".to_string()).into(),
             server_port: Mutex::new("1305".to_string()).into(),
             connected: Mutex::new(false).into(),
@@ -59,15 +77,92 @@ impl DamageAnalyzer {
                 is_window_pinned: false,
                 show_connection_settings: false,
                 show_preferences: false,
-                graph_x_unit: Unit::Turn
+                show_launcher: false,
+                game_path: Config::load().game_path,
+                graph_x_unit: Unit::Turn,
+                config: Config::load(),
+                show_about: false,
+                show_updates: false,
+                checked_app_version: None,
+                checked_dll_version: None,
+                update_state: Arc::new(Mutex::new(UpdateState {
+                    downloaded: false,
+                })),
             },
             runtime: Runtime::new().unwrap(),
+            updater: Updater::new(),
+            toasts: Arc::new(Mutex::new(Toasts::new()
+                .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
+                .direction(egui::Direction::BottomUp))),
         };
 
         // Enter the runtime so that `tokio::spawn` is available immediately.
         let _enter = app.runtime.enter();
 
         app.start_background_workers(&cc.egui_ctx, packet_handler);
+
+        let toasts = app.toasts.clone();
+        let mut updater = app.updater.clone();
+        let (version_tx, version_rx) = tokio::sync::oneshot::channel();
+        
+        app.runtime.spawn(async move {
+            if let Ok(mut toast_lock) = toasts.try_lock() {
+                toast_lock.add(Toast {
+                    text: "Checking for updates...".into(),
+                    kind: ToastKind::Info,
+                    options: ToastOptions::default()
+                        .duration_in_seconds(0.5),
+                    ..Default::default()
+                });
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+            if let Some(new_version) = updater.check_app_update().await {
+                if let Ok(mut toast_lock) = toasts.try_lock() {
+                    if new_version != env!("CARGO_PKG_VERSION") {
+                        toast_lock.add(Toast {
+                            text: format!("Veritas App version {} is available!", new_version).into(),
+                            kind: ToastKind::Success,
+                            options: ToastOptions::default()
+                                .duration_in_seconds(5.0),
+                            ..Default::default()
+                        });
+                        let _ = version_tx.send(Some(new_version));
+                    } else {
+                        toast_lock.add(Toast {
+                            text: "Veritas App is up to date".into(),
+                            kind: ToastKind::Info,
+                            options: ToastOptions::default()
+                                .duration_in_seconds(3.0),
+                            ..Default::default()
+                        });
+                        let _ = version_tx.send(None);
+                    }
+                }
+            }
+            
+            if let Ok(()) = updater.update_dll().await {
+                if let Some(new_version) = updater.latest_dll_version() {
+                    let current_version = updater.current_dll_version();
+                    if current_version.is_none() || current_version.unwrap() != new_version {
+                        if let Ok(mut toast_lock) = toasts.try_lock() {
+                            toast_lock.add(Toast {
+                                text: format!("Updated Veritas to version {}!", new_version).into(),
+                                kind: ToastKind::Success,
+                                options: ToastOptions::default()
+                                    .duration_in_seconds(5.0),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        if let Ok(Some(new_version)) = version_rx.blocking_recv() {
+            app.state.checked_app_version = Some(new_version);
+        }
 
         app
     }
@@ -213,6 +308,9 @@ impl eframe::App for DamageAnalyzer {
         self.show_av_panel(ctx, _frame);
 
         self.show_central_panel(ctx, _frame);
-
+        
+        if let Ok(mut toasts) = self.toasts.try_lock() {
+            toasts.show(ctx);
+        }
     }
 }

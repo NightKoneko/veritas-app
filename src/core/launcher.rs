@@ -154,35 +154,101 @@ pub fn hijack_process(process_name: &str, module_path: &str) {
 
 pub fn start_hijacked_process(proc_path: &str, module_path: &str) {
     unsafe {
-        let path = std::path::absolute(proc_path).unwrap();
-        let mut proc_path_buf = path
+        let proc_path = Path::new(proc_path);
+        let dir = proc_path.parent().unwrap_or(Path::new("."));
+        
+        let mut proc_path_buf = proc_path
             .as_os_str()
             .encode_wide()
             .chain(Some(0))
             .collect::<Vec<u16>>();
 
-        let mut lp_startup_info = STARTUPINFOW {
-            cb: size_of::<STARTUPINFOW>() as _,
+        let mut dir_buf = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        let mut startup_info = STARTUPINFOW {
+            cb: mem::size_of::<STARTUPINFOW>() as u32,
             ..Default::default()
         };
-        let mut lp_process_information = PROCESS_INFORMATION::default();
+        let mut process_info = PROCESS_INFORMATION::default();
 
-        enable_debug_priv();
-        CreateProcessW(
+        let result = CreateProcessW(
             PWSTR(proc_path_buf.as_mut_ptr()),
             None,
             None,
             None,
             false,
-            CREATE_SUSPENDED,
+            CREATE_SUSPENDED, 
             None,
-            None,
-            &mut lp_startup_info,
-            &mut lp_process_information,
-        ).unwrap();
-        
-        inject_payload(lp_process_information.hProcess, module_path);
+            PWSTR(dir_buf.as_mut_ptr()),
+            &mut startup_info,
+            &mut process_info,
+        );
 
-        ResumeThread(lp_process_information.hThread);
-    };
+        match result {
+            Ok(_) => {
+                println!("Process created, waiting before injection...");
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+
+                let process = Threading::OpenProcess(
+                    PROCESS_ALL_ACCESS,
+                    false,
+                    process_info.dwProcessId
+                ).unwrap();
+
+                let path_str = std::path::absolute(module_path).unwrap();
+                let dll_path = path_str.to_str().unwrap();
+                let path_len = dll_path.len() + 1;
+
+                let allocation = Memory::VirtualAllocEx(
+                    process,
+                    None,
+                    path_len,
+                    MEM_RESERVE | MEM_COMMIT,
+                    PAGE_READWRITE
+                );
+
+                println!("Allocated memory for DLL path at {:?}", allocation);
+
+                WriteProcessMemory(
+                    process,
+                    allocation,
+                    dll_path.as_ptr() as _,
+                    path_len,
+                    None
+                ).unwrap();
+
+                let kernel32 = GetModuleHandleW(w!("kernel32")).unwrap();
+                let load_library = GetProcAddress(kernel32, s!("LoadLibraryA")).unwrap();
+                
+                println!("LoadLibraryA found at {:?}", load_library);
+
+                let thread = CreateRemoteThread(
+                    process,
+                    None,
+                    0,
+                    Some(std::mem::transmute(load_library)),
+                    Some(allocation),
+                    0,
+                    None
+                ).unwrap();
+
+                WaitForSingleObject(thread, INFINITE);
+                CloseHandle(thread);
+
+                println!("DLL injected, resuming process...");
+                ResumeThread(process_info.hThread);
+
+                CloseHandle(process);
+                CloseHandle(process_info.hThread);
+                CloseHandle(process_info.hProcess);
+                
+                println!("Game launch complete");
+            },
+            Err(e) => println!("Failed to create process: {}", e),
+        }
+    }
 }
