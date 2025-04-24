@@ -1,7 +1,7 @@
 # veritas
 [![veritas](https://img.shields.io/badge/veritas-Discord-%235865F2.svg)](https://discord.gg/Y9kSnPk95H)
 
-This is still a work in progress. This only works with global-beta. Do NOT attempt to use this while the official version is running. It will not work.
+This is still a work in progress.
 
 # Usage
 Download a build of this app from Releases. Then, download a build of this app's module [veritas](https://github.com/hessiser/veritas) from Releases and place in the root directory of this app. This module will need to be downloaded almost every patch. 
