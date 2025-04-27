@@ -35,13 +35,13 @@ impl PacketHandler {
         match payload_rx.try_recv() {
             Ok(packet) => {
                 match packet.r#type.as_str() {
-                    "SetBattleLineup" => self.handle_lineup(packet.data, message_logger_lock, data_buffer_lock),
-                    "BattleBegin" => self.handle_battle_begin(packet.data, message_logger_lock, data_buffer_lock),
-                    "TurnBegin" => self.handle_turn_begin(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnSetBattleLineup" => self.handle_lineup(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnBattleBegin" => self.handle_battle_begin(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnTurnBegin" => self.handle_turn_begin(packet.data, message_logger_lock, data_buffer_lock),
                     "OnDamage" => self.handle_damage(packet.data, message_logger_lock, data_buffer_lock),
-                    "TurnEnd" => self.handle_turn_end(packet.data, message_logger_lock, data_buffer_lock),
+                    "OnTurnEnd" => self.handle_turn_end(packet.data, message_logger_lock, data_buffer_lock),
                     "OnKill" => self.handle_kill(packet.data, message_logger_lock, data_buffer_lock),
-                    "BattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
+                    "OnBattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
                     "OnUseSkill" => self.handle_on_skill_use(packet.data, message_logger_lock, data_buffer_lock),
                     "Error" => self.handle_error(packet.data, message_logger_lock, data_buffer_lock),
                     _ => {
