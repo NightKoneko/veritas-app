@@ -25,7 +25,6 @@ impl PacketHandler {
         }
     }
 
-
     pub async fn handle_packets(&mut self, payload_rx: &mut mpsc::Receiver<Packet>) -> bool {
         let messager_logger_clone = self.message_logger.clone();
         let mut message_logger_lock = messager_logger_clone.lock().await;
@@ -36,6 +35,7 @@ impl PacketHandler {
             Ok(packet) => {
                 match packet.r#type.as_str() {
                     "OnSetBattleLineup" => self.handle_lineup(packet.data, message_logger_lock, data_buffer_lock),
+                    // TODO: Handle packet
                     "OnBattleBegin" => self.handle_battle_begin(packet.data, message_logger_lock, data_buffer_lock),
                     "OnTurnBegin" => self.handle_turn_begin(packet.data, message_logger_lock, data_buffer_lock),
                     "OnDamage" => self.handle_damage(packet.data, message_logger_lock, data_buffer_lock),
@@ -44,6 +44,7 @@ impl PacketHandler {
                     "OnBattleEnd" => self.handle_battle_end(message_logger_lock, data_buffer_lock),
                     "OnUseSkill" => self.handle_on_skill_use(packet.data, message_logger_lock, data_buffer_lock),
                     "Error" => self.handle_error(packet.data, message_logger_lock, data_buffer_lock),
+                    // TODO: OnUpdateWave, OnUpdateCycle
                     _ => {
                         is_there_update = false;
                         message_logger_lock.log(&format!("Unknown packet type: {}", packet.r#type))
@@ -74,7 +75,7 @@ impl PacketHandler {
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(turn_data) = serde_json::from_value::<TurnData>(data) {
-            for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.avatars_damage.iter()) {
+            for (avatar, &damage) in turn_data.avatars.iter().zip(turn_data.turn_info.avatars_turn_damage.iter()) {
                 // If key doesn't exist, create
                 if !data_buffer.current_turn.contains_key(&avatar.name) {
                     data_buffer.current_turn.insert(avatar.name.clone(), 0.0);
@@ -86,7 +87,7 @@ impl PacketHandler {
                     ));
                 }
             }
-            message_logger.log(&format!("Total turn damage: {}", turn_data.total_damage));
+            message_logger.log(&format!("Total turn damage: {}", turn_data.turn_info.total_damage));
 
             let current_av = (*data_buffer).current_av;
             
@@ -131,6 +132,7 @@ impl PacketHandler {
         mut data_buffer: MutexGuard<'_, DataBufferInner>
     ) {
         if let Ok(lineup_data) = serde_json::from_value::<SetupData>(data) {
+
             let names: Vec<String> = lineup_data.avatars.iter().map(|a| a.name.clone()).collect();
             
             fs::create_dir_all("damage_logs").unwrap_or_else(|e| {

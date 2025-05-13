@@ -45,13 +45,22 @@ pub struct DamageData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TurnData {
     pub avatars: Vec<Avatar>,
-    pub avatars_damage: Vec<f64>,
+    pub turn_info: TurnInfo
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+pub struct TurnInfo {
+    pub action_value: f64,
+    pub cycle: u32,
+    pub wave: u32,
+    pub avatars_turn_damage: Vec<f64>,
     pub total_damage: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TurnBeginData {
     pub action_value: f64,
+    pub turn_owner: Option<Avatar>
 }
 
 #[derive(Debug, Clone, Deserialize)]

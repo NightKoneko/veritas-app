@@ -1,22 +1,26 @@
+use crate::core::config::Config;
 use crate::core::message_logger::MessageLogger;
 use crate::core::models::*;
-use crate::core::network::{ConnectionStatus, NetworkClient};
 use crate::core::packet_handler::PacketHandler;
-use crate::core::config::Config;
 use crate::core::updater::Updater;
 use eframe::egui::{self};
-use egui_toast::{ToastOptions, Toast, ToastKind, Toasts};
+use egui_toast::{Toast, ToastKind, ToastOptions, Toasts};
+use futures_util::FutureExt;
+use rust_socketio::Event;
+use rust_socketio::{
+    asynchronous::{Client, ClientBuilder},
+    Payload,
+};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, Mutex};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 
 #[derive(PartialEq, Clone)]
 pub enum Unit {
     Turn,
-    ActionValue
+    ActionValue,
 }
 
 pub struct UpdateState {
@@ -30,7 +34,7 @@ pub struct AppState {
     pub show_connection_settings: bool,
     pub show_preferences: bool,
     pub show_launcher: bool,
-    pub game_path: Option<String>, 
+    pub game_path: Option<String>,
     pub graph_x_unit: Unit,
     pub config: Config,
     pub show_about: bool,
@@ -60,10 +64,7 @@ impl DamageAnalyzer {
 
         let message_logger = Arc::new(Mutex::new(MessageLogger::default()));
         let data_buffer = Arc::new(DataBuffer::new());
-        let packet_handler = PacketHandler::new(
-            message_logger.clone(),
-            data_buffer.clone(),
-        );
+        let packet_handler = PacketHandler::new(message_logger.clone(), data_buffer.clone());
 
         let mut app = Self {
             server_addr: Mutex::new("127.0.0.1".to_string()).into(),
@@ -85,15 +86,15 @@ impl DamageAnalyzer {
                 show_updates: false,
                 checked_app_version: None,
                 checked_dll_version: None,
-                update_state: Arc::new(Mutex::new(UpdateState {
-                    downloaded: false,
-                })),
+                update_state: Arc::new(Mutex::new(UpdateState { downloaded: false })),
             },
             runtime: Runtime::new().unwrap(),
             updater: Updater::new(),
-            toasts: Arc::new(Mutex::new(Toasts::new()
-                .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
-                .direction(egui::Direction::BottomUp))),
+            toasts: Arc::new(Mutex::new(
+                Toasts::new()
+                    .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
+                    .direction(egui::Direction::BottomUp),
+            )),
         };
 
         // Enter the runtime so that `tokio::spawn` is available immediately.
@@ -104,14 +105,13 @@ impl DamageAnalyzer {
         let toasts = app.toasts.clone();
         let mut updater = app.updater.clone();
         let (version_tx, version_rx) = tokio::sync::oneshot::channel();
-        
+
         app.runtime.spawn(async move {
             if let Ok(mut toast_lock) = toasts.try_lock() {
                 toast_lock.add(Toast {
                     text: "Checking for updates...".into(),
                     kind: ToastKind::Info,
-                    options: ToastOptions::default()
-                        .duration_in_seconds(0.5),
+                    options: ToastOptions::default().duration_in_seconds(0.5),
                     ..Default::default()
                 });
             }
@@ -122,10 +122,10 @@ impl DamageAnalyzer {
                 if let Ok(mut toast_lock) = toasts.try_lock() {
                     if new_version != env!("CARGO_PKG_VERSION") {
                         toast_lock.add(Toast {
-                            text: format!("Veritas App version {} is available!", new_version).into(),
+                            text: format!("Veritas App version {} is available!", new_version)
+                                .into(),
                             kind: ToastKind::Success,
-                            options: ToastOptions::default()
-                                .duration_in_seconds(5.0),
+                            options: ToastOptions::default().duration_in_seconds(5.0),
                             ..Default::default()
                         });
                         let _ = version_tx.send(Some(new_version));
@@ -133,15 +133,14 @@ impl DamageAnalyzer {
                         toast_lock.add(Toast {
                             text: "Veritas App is up to date".into(),
                             kind: ToastKind::Info,
-                            options: ToastOptions::default()
-                                .duration_in_seconds(3.0),
+                            options: ToastOptions::default().duration_in_seconds(3.0),
                             ..Default::default()
                         });
                         let _ = version_tx.send(None);
                     }
                 }
             }
-            
+
             if let Ok(()) = updater.update_dll().await {
                 if let Some(new_version) = updater.latest_dll_version() {
                     let current_version = updater.current_dll_version();
@@ -150,8 +149,7 @@ impl DamageAnalyzer {
                             toast_lock.add(Toast {
                                 text: format!("Updated Veritas to version {}!", new_version).into(),
                                 kind: ToastKind::Success,
-                                options: ToastOptions::default()
-                                    .duration_in_seconds(5.0),
+                                options: ToastOptions::default().duration_in_seconds(5.0),
                                 ..Default::default()
                             });
                         }
@@ -168,15 +166,17 @@ impl DamageAnalyzer {
     }
 
     fn start_background_workers(&self, ctx: &egui::Context, packet_handler: PacketHandler) {
-        let (status_tx, status_rx) = mpsc::channel(1);
         let (payload_tx, payload_rx) = mpsc::channel(100);
-
-        self.start_connection_worker(payload_tx, status_tx);
         self.start_packet_worker(payload_rx, ctx.clone(), packet_handler);
-        self.start_connection_status_worker(status_rx);
+        self.start_client_worker(payload_tx);
     }
 
-    fn start_packet_worker(&self, mut payload_rx: mpsc::Receiver<Packet>, ctx: egui::Context, mut packet_handler: PacketHandler) {
+    fn start_packet_worker(
+        &self,
+        mut payload_rx: mpsc::Receiver<Packet>,
+        ctx: egui::Context,
+        mut packet_handler: PacketHandler,
+    ) {
         let is_there_update = self.is_there_update.clone();
         self.runtime.spawn(async move {
             loop {
@@ -186,113 +186,72 @@ impl DamageAnalyzer {
                     ctx.request_repaint();
                 }
                 drop(is_there_update_lock);
-                sleep(Duration::from_millis(10)).await;
+                sleep(Duration::from_millis(1)).await;
             }
         });
     }
 
-    fn start_connection_worker(
+    fn start_client_worker(
         &self,
         payload_tx: mpsc::Sender<Packet>,
-        status_tx: mpsc::Sender<ConnectionStatus>,
     ) {
         let server_addr = self.server_addr.clone();
         let server_port = self.server_port.clone();
+        let connected = self.connected.clone();
 
+        // This is so verbose, but necessary
         self.runtime.spawn(async move {
-
-            let mut network_client = NetworkClient::new();
-            // Try connecting
             loop {
-                let is_connected = network_client
-                    .start_connection(&status_tx, &server_addr, &server_port)
-                    .await;
+                if !*connected.lock().await {
+                    let on_connected_status = connected.clone();
+                    let on_disconnected_status = connected.clone();
+                    let payload_tx = payload_tx.clone();
 
-                if is_connected {
-                    // let orig_server_addr = (*server_addr.lock().await).clone();
-                    // let orig_server_port = (*server_port.lock().await).clone();
+                    let connected_callback = move |_payload: Payload, _socket: Client| {
+                        let on_connected_status = on_connected_status.clone();
+                        async move {
+                            *on_connected_status.lock().await = true;
+                        }
+                        .boxed()
+                    };
 
-                    static MAX_RETRIES: usize = 2;
-                    static INITIAL_TIMEOUT: Duration = Duration::from_secs(1);
-                    let mut retries = 0;
-                    let mut timeout_duration = INITIAL_TIMEOUT;
-                    // Try receiving packets
-                    loop {
-                        // Why is this not working??
-                        // if orig_server_addr != *server_addr.lock().await || orig_server_port != *server_addr.lock().await {
-                        //     network_client.disconnect().await;
-                        //     break;
-                        // }
-                        match timeout(timeout_duration, network_client.start_receiving(&payload_tx)).await {
-                            // If no timeout
-                            Ok(v) => {
-                                // If not a packet
-                                if v.is_err() {
-                                    if !network_client.try_pinging(
-                                        &mut retries,
-                                        MAX_RETRIES,
-                                        &mut timeout_duration,
-                                        &INITIAL_TIMEOUT
-                                    ).await {
-                                        break;
+                    let disconnected_callback = move |_payload: Payload, _socket: Client| {
+                        let on_disconnected_status = on_disconnected_status.clone();
+                        async move {
+                            *on_disconnected_status.lock().await = false;
+                        }
+                        .boxed()
+                    };
+
+                    let message_handler_callback  = move |event: Event, payload: Payload, _socket: Client| {
+                        let payload_tx = payload_tx.clone();
+                        async move {
+                            if let Event::Custom(e) = event {
+                                if let Payload::Text(text) = payload {
+                                    for msg in text {
+                                        let _ = payload_tx.send(Packet { r#type: e.clone(), data: msg }).await;
                                     }
                                 }
-                                // Reset if packet
-                                else {
-                                    retries = 0;
-                                    timeout_duration = INITIAL_TIMEOUT;
-                                    sleep(Duration::from_millis(10)).await;
-                                }
-                            }
-                            // If timeout
-                            Err(_) => {
-                                if !network_client.try_pinging(
-                                    &mut retries,
-                                    MAX_RETRIES,
-                                    &mut timeout_duration,
-                                    &INITIAL_TIMEOUT
-                                ).await {
-                                    break;
-                                }
                             }
                         }
-                    }
+                        .boxed()
+                    };
+
+                    ClientBuilder::new(format!(
+                        "http://{}:{}/",
+                        &server_addr.lock().await,
+                        &server_port.lock().await
+                    ))
+                    .namespace("/")
+                    .on(Event::Connect, connected_callback)
+                    .on(Event::Error, disconnected_callback)
+                    .on_any(message_handler_callback)
+                    .reconnect(false)
+                    .connect()
+                    .await
+                    .ok();
                 }
-                sleep(Duration::from_secs(1)).await;
-            }
-        });
-    }
 
-    fn start_connection_status_worker(&self, mut status_rx: Receiver<ConnectionStatus>) {
-        let server_addr = self.server_addr.clone();
-        let server_port = self.server_port.clone();
-
-        let connected = self.connected.clone();
-        let message_logger = self.message_logger.clone();
-
-        self.runtime.spawn(async move {
-            loop {
-                let mut connected_lock = connected.lock().await;
-                if let Some(status) = status_rx.try_recv().ok() {
-                    match status {
-                        ConnectionStatus::Connected => {
-                            let mut message_logger_lock = message_logger.lock().await;
-                            *connected_lock = true;
-                            let addr = format!(
-                                "{}:{}",
-                                server_addr.lock().await,
-                                server_port.lock().await
-                            );
-                            message_logger_lock.log(&format!("Connected to {}", addr));
-                        }
-                        ConnectionStatus::Failed(_err) => {
-                            *connected_lock = false;
-                            // Unsure how to handle this well
-                            // message_logger_lock.log(&format!("Failed to connect: {}", err));
-                        }
-                    }
-                }
-                drop(connected_lock);
                 sleep(Duration::from_secs(1)).await;
             }
         });
@@ -308,7 +267,7 @@ impl eframe::App for DamageAnalyzer {
         self.show_av_panel(ctx, _frame);
 
         self.show_central_panel(ctx, _frame);
-        
+
         if let Ok(mut toasts) = self.toasts.try_lock() {
             toasts.show(ctx);
         }
