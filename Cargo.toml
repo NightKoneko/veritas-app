@@ -1,6 +1,6 @@
 [package]
 name = "veritas-app"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
 repository = "https://github.com/NightKoneko/veritas-app"
 license = "MIT"
